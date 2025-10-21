@@ -1,78 +1,139 @@
 <template>
   <div class="demand-application">
-    <a-page-header
-      title="需求申报"
-      sub-title="提交师资需求申请"
-    >
-      <template #extra>
+    <!-- 面包屑导航 -->
+    <div class="breadcrumb">
+      <a-breadcrumb>
+        <a-breadcrumb-item>中小学校</a-breadcrumb-item>
+        <a-breadcrumb-item>需求申报</a-breadcrumb-item>
+      </a-breadcrumb>
+    </div>
+
+    <!-- 页面标题 -->
+    <div class="page-header">
+      <h1>需求申报</h1>
+      <p class="page-subtitle">提交师资需求申请，获取优质支教教师支持</p>
+    </div>
+
+    <!-- 数据概览卡片 -->
+    <a-row :gutter="16" class="stats-cards">
+      <a-col :span="6">
+        <div class="data-card">
+          <div class="value highlight-text">{{ stats.total }}</div>
+          <div class="label">总申报数</div>
+        </div>
+      </a-col>
+      <a-col :span="6">
+        <div class="data-card">
+          <div class="value highlight-text">{{ stats.draft }}</div>
+          <div class="label">草稿</div>
+        </div>
+      </a-col>
+      <a-col :span="6">
+        <div class="data-card">
+          <div class="value highlight-text">{{ stats.submitted }}</div>
+          <div class="label">已提交</div>
+        </div>
+      </a-col>
+      <a-col :span="6">
+        <div class="data-card">
+          <div class="value highlight-text">{{ stats.approved }}</div>
+          <div class="label">已通过</div>
+        </div>
+      </a-col>
+    </a-row>
+
+    <!-- 操作栏 -->
+    <div class="action-bar">
+      <a-space>
         <a-button type="primary" @click="showAddModal = true">
           <template #icon><PlusOutlined /></template>
           新增需求
         </a-button>
-      </template>
-    </a-page-header>
+        <a-button @click="refreshData">
+          <template #icon><ReloadOutlined /></template>
+          刷新数据
+        </a-button>
+      </a-space>
+    </div>
 
-    <a-tabs v-model:activeKey="activeTab">
-      <a-tab-pane key="draft" tab="草稿">
-        <a-card>
-          <a-table
-            :columns="columns"
-            :data-source="draftDemands"
-            :pagination="pagination"
-            row-key="id"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'action'">
-                <a-space>
-                  <a-button type="link" @click="editDemand(record)">
-                    编辑
-                  </a-button>
-                  <a-button type="link" @click="submitDemand(record)">
-                    提交
-                  </a-button>
-                  <a-popconfirm title="确定删除这个需求吗？" @confirm="deleteDemand(record.id)">
-                    <a style="color: #ff4d4f">删除</a>
-                  </a-popconfirm>
-                </a-space>
+    <!-- 需求列表 -->
+    <a-card class="content-card">
+      <a-tabs v-model:activeKey="activeTab" type="card">
+        <a-tab-pane key="draft" tab="草稿">
+          <div class="tab-content">
+            <a-table
+              :columns="columns"
+              :data-source="draftDemands"
+              :pagination="pagination"
+              row-key="id"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'action'">
+                  <a-space>
+                    <a-button type="link" size="small" @click="editDemand(record)">
+                      编辑
+                    </a-button>
+                    <a-button type="link" size="small" @click="submitDemand(record)">
+                      提交
+                    </a-button>
+                    <a-popconfirm 
+                      title="确定删除这个需求吗？" 
+                      @confirm="deleteDemand(record.id)"
+                      ok-text="确定"
+                      cancel-text="取消"
+                    >
+                      <a-button type="link" size="small" style="color: var(--error-color)">
+                        删除
+                      </a-button>
+                    </a-popconfirm>
+                  </a-space>
+                </template>
+                <template v-else-if="column.key === 'urgency'">
+                  <span :class="['status-tag', `status-${record.urgency}`]">
+                    {{ getUrgencyText(record.urgency) }}
+                  </span>
+                </template>
               </template>
-            </template>
-          </a-table>
-        </a-card>
-      </a-tab-pane>
-      
-      <a-tab-pane key="submitted" tab="已提交">
-        <a-card>
-          <a-table
-            :columns="columns"
-            :data-source="submittedDemands"
-            :pagination="pagination"
-            row-key="id"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'action'">
-                <a-space>
-                  <a-button type="link" @click="viewDetails(record)">
-                    查看
-                  </a-button>
-                  <a-button 
-                    type="link" 
-                    @click="withdrawDemand(record)"
-                    :disabled="record.status !== 'pending'"
-                  >
-                    撤回
-                  </a-button>
-                </a-space>
+            </a-table>
+          </div>
+        </a-tab-pane>
+        
+        <a-tab-pane key="submitted" tab="已提交">
+          <div class="tab-content">
+            <a-table
+              :columns="columns"
+              :data-source="submittedDemands"
+              :pagination="pagination"
+              row-key="id"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'action'">
+                  <a-space>
+                    <a-button type="link" size="small" @click="viewDetails(record)">
+                      查看
+                    </a-button>
+                    <a-button 
+                      type="link" 
+                      size="small" 
+                      @click="withdrawDemand(record)"
+                      :disabled="record.status !== 'pending'"
+                      style="color: var(--warning-color)"
+                    >
+                      撤回
+                    </a-button>
+                  </a-space>
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <span :class="['status-tag', `status-${record.status}`]">
+                    {{ getStatusText(record.status) }}
+                  </span>
+                </template>
               </template>
-              <template v-else-if="column.key === 'status'">
-                <a-tag :color="getStatusColor(record.status)">
-                  {{ getStatusText(record.status) }}
-                </a-tag>
-              </template>
-            </template>
-          </a-table>
-        </a-card>
-      </a-tab-pane>
-    </a-tabs>
+            </a-table>
+          </div>
+        </a-tab-pane>
+      </a-tabs>
+    </a-card>
 
     <!-- 新增需求模态框 -->
     <a-modal
@@ -92,15 +153,28 @@
                 <a-select-option value="英语">英语</a-select-option>
                 <a-select-option value="物理">物理</a-select-option>
                 <a-select-option value="化学">化学</a-select-option>
+                <a-select-option value="生物">生物</a-select-option>
+                <a-select-option value="历史">历史</a-select-option>
+                <a-select-option value="地理">地理</a-select-option>
+                <a-select-option value="政治">政治</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="年级" required>
               <a-select v-model:value="addForm.grade" placeholder="请选择年级">
-                <a-select-option value="小学">小学</a-select-option>
-                <a-select-option value="初中">初中</a-select-option>
-                <a-select-option value="高中">高中</a-select-option>
+                <a-select-option value="小学一年级">小学一年级</a-select-option>
+                <a-select-option value="小学二年级">小学二年级</a-select-option>
+                <a-select-option value="小学三年级">小学三年级</a-select-option>
+                <a-select-option value="小学四年级">小学四年级</a-select-option>
+                <a-select-option value="小学五年级">小学五年级</a-select-option>
+                <a-select-option value="小学六年级">小学六年级</a-select-option>
+                <a-select-option value="初中一年级">初中一年级</a-select-option>
+                <a-select-option value="初中二年级">初中二年级</a-select-option>
+                <a-select-option value="初中三年级">初中三年级</a-select-option>
+                <a-select-option value="高中一年级">高中一年级</a-select-option>
+                <a-select-option value="高中二年级">高中二年级</a-select-option>
+                <a-select-option value="高中三年级">高中三年级</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
@@ -112,36 +186,60 @@
             :min="1" 
             :max="10"
             style="width: 100%"
+            placeholder="请输入需求人数"
           />
         </a-form-item>
         
         <a-form-item label="支教时间" required>
-          <a-input v-model:value="addForm.duration" placeholder="例如：2023-2024学年" />
+          <a-input v-model:value="addForm.duration" placeholder="例如：2023-2024学年第一学期" />
         </a-form-item>
         
-        <a-form-item label="紧急程度">
+        <a-form-item label="紧急程度" required>
           <a-radio-group v-model:value="addForm.urgency">
-            <a-radio value="high">紧急</a-radio>
-            <a-radio value="medium">一般</a-radio>
-            <a-radio value="low">不紧急</a-radio>
+            <a-radio value="high">
+              <span class="urgency-option">
+                <span class="urgency-dot high"></span>
+                紧急
+              </span>
+            </a-radio>
+            <a-radio value="medium">
+              <span class="urgency-option">
+                <span class="urgency-dot medium"></span>
+                一般
+              </span>
+            </a-radio>
+            <a-radio value="low">
+              <span class="urgency-option">
+                <span class="urgency-dot low"></span>
+                不紧急
+              </span>
+            </a-radio>
           </a-radio-group>
         </a-form-item>
         
         <a-form-item label="特殊要求">
           <a-textarea
             v-model:value="addForm.requirements"
-            placeholder="请输入特殊要求（如：需要有班主任经验等）"
+            placeholder="请输入特殊要求（如：需要有班主任经验、擅长多媒体教学等）"
             :rows="3"
+            show-count
+            :maxlength="200"
           />
         </a-form-item>
       </a-form>
+      <template #footer>
+        <a-button @click="showAddModal = false">取消</a-button>
+        <a-button type="primary" :loading="addLoading" @click="handleAdd">
+          保存为草稿
+        </a-button>
+      </template>
     </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { ref, reactive, computed } from 'vue'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 
 const activeTab = ref('draft')
@@ -166,12 +264,21 @@ const draftDemands = ref([
     duration: '2023-2024学年',
     urgency: 'high',
     createTime: '2023-10-20'
+  },
+  {
+    id: 2,
+    subject: '英语',
+    grade: '初中二年级',
+    demand: 1,
+    duration: '2023-2024学年',
+    urgency: 'medium',
+    createTime: '2023-10-18'
   }
 ])
 
 const submittedDemands = ref([
   {
-    id: 2,
+    id: 3,
     subject: '语文',
     grade: '初二',
     demand: 1,
@@ -179,35 +286,84 @@ const submittedDemands = ref([
     urgency: 'medium',
     submitTime: '2023-10-19',
     status: 'pending'
+  },
+  {
+    id: 4,
+    subject: '物理',
+    grade: '高中二年级',
+    demand: 1,
+    duration: '2023-2024学年',
+    urgency: 'low',
+    submitTime: '2023-10-15',
+    status: 'approved'
   }
 ])
 
+// 统计数据
+const stats = computed(() => {
+  const total = draftDemands.value.length + submittedDemands.value.length
+  const draft = draftDemands.value.length
+  const submitted = submittedDemands.value.length
+  const approved = submittedDemands.value.filter(d => d.status === 'approved').length
+  
+  return { total, draft, submitted, approved }
+})
+
 const columns = [
-  { title: '学科', dataIndex: 'subject', key: 'subject' },
-  { title: '年级', dataIndex: 'grade', key: 'grade' },
-  { title: '需求人数', dataIndex: 'demand', key: 'demand' },
-  { title: '支教时间', dataIndex: 'duration', key: 'duration' },
-  { title: '紧急程度', key: 'urgency', 
-    customRender: ({ text }) => getUrgencyText(text) 
+  { 
+    title: '学科', 
+    dataIndex: 'subject', 
+    key: 'subject',
+    width: 80
   },
-  { title: '提交时间', dataIndex: 'submitTime', key: 'submitTime' },
-  { title: '状态', key: 'status' },
-  { title: '操作', key: 'action' }
+  { 
+    title: '年级', 
+    dataIndex: 'grade', 
+    key: 'grade',
+    width: 100
+  },
+  { 
+    title: '需求人数', 
+    dataIndex: 'demand', 
+    key: 'demand',
+    width: 100
+  },
+  { 
+    title: '支教时间', 
+    dataIndex: 'duration', 
+    key: 'duration',
+    width: 140
+  },
+  { 
+    title: '紧急程度', 
+    key: 'urgency',
+    width: 100
+  },
+  { 
+    title: '提交时间', 
+    dataIndex: 'submitTime', 
+    key: 'submitTime',
+    width: 120
+  },
+  { 
+    title: '状态', 
+    key: 'status',
+    width: 100
+  },
+  { 
+    title: '操作', 
+    key: 'action',
+    width: 200
+  }
 ]
 
 const pagination = {
   current: 1,
   pageSize: 10,
-  total: 1
-}
-
-const getStatusColor = (status) => {
-  const colors = {
-    pending: 'orange',
-    approved: 'green',
-    rejected: 'red'
-  }
-  return colors[status] || 'default'
+  total: 4,
+  showSizeChanger: true,
+  showQuickJumper: true,
+  showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`
 }
 
 const getStatusText = (status) => {
@@ -237,7 +393,10 @@ const handleAdd = async () => {
       ...addForm,
       createTime: new Date().toISOString().split('T')[0]
     })
-    message.success('需求已保存为草稿')
+    message.success({
+      content: '需求已保存为草稿',
+      className: 'success-message'
+    })
     showAddModal.value = false
     Object.keys(addForm).forEach(key => {
       if (key !== 'urgency') {
@@ -250,6 +409,10 @@ const handleAdd = async () => {
   } finally {
     addLoading.value = false
   }
+}
+
+const refreshData = () => {
+  message.success('数据已刷新')
 }
 
 const editDemand = (record) => {
@@ -288,6 +451,125 @@ const viewDetails = (record) => {
 
 <style scoped>
 .demand-application {
-  padding: 20px;
+  padding: 24px;
+  background: #fafafa;
+  min-height: 100%;
+}
+
+.breadcrumb {
+  margin-bottom: 16px;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.stats-cards {
+  margin-bottom: 24px;
+}
+
+.action-bar {
+  margin-bottom: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.content-card {
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.tab-content {
+  padding: 8px 0;
+}
+
+/* 紧急程度选项样式 */
+.urgency-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.urgency-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.urgency-dot.high {
+  background: var(--error-color);
+}
+
+.urgency-dot.medium {
+  background: var(--warning-color);
+}
+
+.urgency-dot.low {
+  background: var(--success-color);
+}
+
+/* 状态标签样式 */
+.status-pending {
+  background: #FFFBEB;
+  color: var(--warning-color);
+  border: 1px solid #FCD34D;
+}
+
+.status-approved {
+  background: #F0FDF4;
+  color: var(--success-color);
+  border: 1px solid #BBF7D0;
+}
+
+.status-rejected {
+  background: #FEF2F2;
+  color: var(--error-color);
+  border: 1px solid #FECACA;
+}
+
+/* 紧急程度标签样式 */
+.status-high {
+  background: #FEF2F2;
+  color: var(--error-color);
+  border: 1px solid #FECACA;
+}
+
+.status-medium {
+  background: #FFFBEB;
+  color: var(--warning-color);
+  border: 1px solid #FCD34D;
+}
+
+.status-low {
+  background: #F0FDF4;
+  color: var(--success-color);
+  border: 1px solid #BBF7D0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .demand-application {
+    padding: 16px;
+  }
+  
+  .stats-cards .ant-col {
+    margin-bottom: 16px;
+  }
 }
 </style>
