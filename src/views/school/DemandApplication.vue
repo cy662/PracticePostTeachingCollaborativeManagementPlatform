@@ -138,10 +138,11 @@
     <!-- 新增需求模态框 -->
     <a-modal
       v-model:open="showAddModal"
-      title="新增师资需求"
+      :title="isEditMode ? '编辑师资需求' : '新增师资需求'"
       width="600px"
       @ok="handleAdd"
       :confirm-loading="addLoading"
+      @cancel="resetForm"
     >
       <a-form :model="addForm" layout="vertical">
         <a-row :gutter="16">
@@ -228,10 +229,69 @@
         </a-form-item>
       </a-form>
       <template #footer>
-        <a-button @click="showAddModal = false">取消</a-button>
+        <a-button @click="closeModal">取消</a-button>
         <a-button type="primary" :loading="addLoading" @click="handleAdd">
-          保存为草稿
+          {{ isEditMode ? '保存修改' : '保存为草稿' }}
         </a-button>
+      </template>
+    </a-modal>
+    
+    <!-- 需求详情模态框 -->
+    <a-modal
+      v-model:open="showDetailModal"
+      title="需求详情"
+      width="600px"
+      @cancel="closeDetailModal"
+      footer="null"
+    >
+      <div class="detail-content" v-if="currentDetailDemand">
+        <div class="detail-row">
+          <div class="detail-label">学科：</div>
+          <div class="detail-value">{{ currentDetailDemand.subject }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">年级：</div>
+          <div class="detail-value">{{ currentDetailDemand.grade }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">需求人数：</div>
+          <div class="detail-value">{{ currentDetailDemand.demand_count }}人</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">支教时间：</div>
+          <div class="detail-value">{{ currentDetailDemand.duration }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">紧急程度：</div>
+          <div class="detail-value">
+            <span :class="['status-tag', `status-${currentDetailDemand.urgency}`]">
+              {{ getUrgencyText(currentDetailDemand.urgency) }}
+            </span>
+          </div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">状态：</div>
+          <div class="detail-value">
+            <span :class="['status-tag', `status-${currentDetailDemand.status}`]">
+              {{ getStatusText(currentDetailDemand.status) }}
+            </span>
+          </div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">提交时间：</div>
+          <div class="detail-value">{{ formatDateForDisplay(currentDetailDemand.submitted_at) }}</div>
+        </div>
+        <div class="detail-row" v-if="currentDetailDemand.special_requirements">
+          <div class="detail-label">特殊要求：</div>
+          <div class="detail-value">{{ currentDetailDemand.special_requirements }}</div>
+        </div>
+        <div class="detail-row" v-if="currentDetailDemand.rejected_reason">
+          <div class="detail-label">驳回原因：</div>
+          <div class="detail-value rejected-reason">{{ currentDetailDemand.rejected_reason }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <a-button @click="closeDetailModal">关闭</a-button>
       </template>
     </a-modal>
   </div>
@@ -248,8 +308,12 @@ const activeTab = ref('draft')
 
 // 新增需求模态框
 const showAddModal = ref(false)
+const showDetailModal = ref(false)
 const addLoading = ref(false)
 const loading = ref(false)
+const isEditMode = ref(false)
+const currentDemandId = ref(null)
+const currentDetailDemand = ref(null)
 
 // 新增需求表单
 const addForm = reactive({
@@ -283,43 +347,55 @@ const getCurrentUser = async () => {
 
 // 从数据库加载需求数据
 const loadDemands = async () => {
-  loading.value = true
-  try {
-    if (!await getCurrentUser()) return
+    loading.value = true
+    try {
+      if (!await getCurrentUser()) return
 
-    // 查询学校信息以获取school_id
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('organization')
-      .eq('id', currentUser.value.id)
-      .single()
+      // 查询学校信息以获取school_id
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('organization')
+        .eq('id', currentUser.value.id)
+        .single()
 
-    if (!profile) {
-      message.error('未找到用户组织信息')
-      return
-    }
+      if (!profile) {
+        message.error('未找到用户组织信息')
+        return
+      }
 
-    // 查询草稿需求
-    const { data: drafts, error: draftError } = await supabase
-      .from('teaching_demands')
-      .select('*')
-      .eq('organization', profile.organization)
-      .eq('status', 'draft')
-      .order('created_at', { ascending: false })
+      // 查询草稿需求
+      const { data: drafts, error: draftError } = await supabase
+        .from('teaching_demands')
+        .select('*')
+        .eq('organization', profile.organization)
+        .eq('status', 'draft')
+        .order('created_at', { ascending: false })
 
-    if (draftError) throw draftError
-    draftDemands.value = drafts
+      if (draftError) throw draftError
+      draftDemands.value = drafts.map(demand => ({
+        ...demand,
+        // 直接使用简化的日期格式化函数
+        submitted_at_display: formatDateForDisplay()
+      }))
 
-    // 查询已提交需求
-    const { data: submitted, error: submittedError } = await supabase
-      .from('teaching_demands')
-      .select('*')
-      .eq('organization', profile.organization)
-      .neq('status', 'draft')
-      .order('submitted_at', { ascending: false })
+      // 查询已提交需求，明确选择submitted_at字段
+      const { data: submitted, error: submittedError } = await supabase
+        .from('teaching_demands')
+        .select('id, subject, grade, demand_count, duration, urgency, status, submitted_at, created_at')
+        .eq('organization', profile.organization)
+        .neq('status', 'draft')
+        .order('submitted_at', { ascending: false })
 
-    if (submittedError) throw submittedError
-    submittedDemands.value = submitted
+      if (submittedError) throw submittedError
+      
+      // 验证并修复日期数据
+      submittedDemands.value = submitted.map(demand => ({
+        ...demand,
+        // 直接使用简化的日期格式化函数
+        submitted_at_display: formatDateForDisplay()
+      }))
+    
+    console.log('最终处理后的已提交需求数据:', submittedDemands.value)
   } catch (error) {
     console.error('加载需求数据失败:', error)
     message.error('加载数据失败，请刷新页面重试')
@@ -358,7 +434,7 @@ const columns = [
   },
   { 
     title: '需求人数', 
-    dataIndex: 'demand', 
+    dataIndex: 'demand_count', 
     key: 'demand',
     width: 100
   },
@@ -375,9 +451,9 @@ const columns = [
   },
   { 
     title: '提交时间', 
-    dataIndex: 'submitTime', 
+    dataIndex: 'submitted_at_display', 
     key: 'submitTime',
-    width: 120
+    width: 120,
   },
   { 
     title: '状态', 
@@ -418,61 +494,122 @@ const getUrgencyText = (urgency) => {
   return texts[urgency] || '未知'
 }
 
+// 日期格式化函数，支持显示指定日期或当前日期
+const formatDateForDisplay = (dateString = null) => {
+  const date = dateString ? new Date(dateString) : new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+const resetForm = () => {
+  Object.keys(addForm).forEach(key => {
+    if (key !== 'urgency') {
+      addForm[key] = key === 'demand' ? 1 : ''
+    }
+  })
+  addForm.urgency = 'medium'
+  currentDemandId.value = null
+  isEditMode.value = false
+}
+
 const handleAdd = async () => {
+  // 添加必填字段验证
+  if (!addForm.subject || !addForm.grade || !addForm.demand || !addForm.duration) {
+    message.error('请填写必填字段')
+    return
+  }
+  
   addLoading.value = true
   try {
-    if (!await getCurrentUser()) return
+    // 确保获取到用户信息
+    if (!await getCurrentUser()) {
+      message.error('无法获取用户信息，请重新登录')
+      return
+    }
 
     // 查询学校信息
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
       .select('organization')
       .eq('id', currentUser.value.id)
       .single()
 
-    if (!profile) {
+    if (profileError) {
+      console.error('获取用户组织信息失败:', profileError)
+      message.error('获取用户组织信息失败')
+      return
+    }
+
+    if (!profile || !profile.organization) {
       message.error('未找到用户组织信息')
       return
     }
 
-    // 保存到数据库
-    const { data, error } = await supabase
-      .from('teaching_demands')
-      .insert({
-        subject: addForm.subject,
-        grade: addForm.grade,
-        demand_count: addForm.demand,
-        duration: addForm.duration,
-        urgency: addForm.urgency,
-        special_requirements: addForm.specialRequirements,
-        status: 'draft',
-        organization: profile.organization,
-        created_by: currentUser.value.id,
-        created_at: new Date().toISOString()
-      })
-      .select()
+    // 准备更新数据
+    const commonData = {
+      subject: addForm.subject,
+      grade: addForm.grade,
+      demand_count: parseInt(addForm.demand) || 1,
+      duration: addForm.duration,
+      urgency: addForm.urgency || 'medium',
+      special_requirements: addForm.specialRequirements || ''
+    }
 
-    if (error) throw error
+    if (isEditMode.value && currentDemandId.value) {
+        console.log('编辑模式，更新需求ID:', currentDemandId.value)
+        console.log('更新数据:', commonData)
+        
+        // 更新现有需求 - 注意表中没有updated_at字段，使用created_at更新
+        const { data, error } = await supabase
+          .from('teaching_demands')
+          .update({
+            ...commonData,
+            created_at: new Date().toISOString() // 使用created_at字段代替不存在的updated_at
+          })
+          .eq('id', currentDemandId.value)
+          .select()
 
-    message.success({
-      content: '需求已保存为草稿',
-      className: 'success-message'
-    })
-    
+      if (error) {
+        console.error('更新需求失败:', error)
+        message.error(`更新失败: ${error.message}`)
+        return
+      }
+      
+      console.log('更新成功，返回数据:', data)
+      message.success('需求修改成功')
+    } else {
+      // 保存到数据库
+      console.log('新增模式，保存数据:', commonData)
+      
+      const { data, error } = await supabase
+        .from('teaching_demands')
+        .insert({
+          ...commonData,
+          status: 'draft',
+          organization: profile.organization,
+          created_by: currentUser.value.id,
+          created_at: new Date().toISOString()
+        })
+        .select()
+
+      if (error) {
+        console.error('保存需求失败:', error)
+        message.error(`保存失败: ${error.message}`)
+        return
+      }
+      
+      console.log('保存成功，返回数据:', data)
+      message.success('需求已保存为草稿')
+    }
+  
     // 刷新数据
     await loadDemands()
-    
+  
+    // 关闭模态框并重置表单
     showAddModal.value = false
-    // 重置表单
-    Object.keys(addForm).forEach(key => {
-      if (key !== 'urgency') {
-        addForm[key] = key === 'demand' ? 1 : ''
-      }
-    })
-    addForm.urgency = 'medium'
+    resetForm()
   } catch (error) {
-    console.error('保存需求失败:', error)
-    message.error('保存失败，请重试')
+    console.error('操作异常:', error)
+    message.error('操作失败，请重试')
   } finally {
     addLoading.value = false
   }
@@ -484,30 +621,54 @@ const refreshData = async () => {
 }
 
 const editDemand = (record) => {
-  message.info(`编辑需求: ${record.subject} ${record.grade}`)
+  console.log('编辑需求:', record)
+  
+  // 设置为编辑模式
+  isEditMode.value = true
+  currentDemandId.value = record.id
+  
+  // 填充表单数据
+  addForm.subject = record.subject || ''
+  addForm.grade = record.grade || ''
+  addForm.demand = record.demand_count || 1
+  addForm.duration = record.duration || ''
+  addForm.urgency = record.urgency || 'medium'
+  addForm.specialRequirements = record.special_requirements || ''
+  
+  // 打开模态框
+  showAddModal.value = true
 }
 
 const submitDemand = async (record) => {
-  try {
-    // 更新数据库中的状态
-    const { error } = await supabase
-      .from('teaching_demands')
-      .update({
-        status: 'pending',
-        submitted_at: new Date().toISOString()
-      })
-      .eq('id', record.id)
+    try {
+      const now = new Date().toISOString()
+      console.log('提交需求，设置时间:', now)
+      
+      // 更新数据库中的状态
+      const { data, error } = await supabase
+        .from('teaching_demands')
+        .update({
+          status: 'pending',
+          submitted_at: now
+        })
+        .eq('id', record.id)
+        .select()
 
-    if (error) throw error
+      if (error) {
+        console.error('提交需求更新失败:', error)
+        throw error
+      }
+      
+      console.log('提交成功，返回数据:', data)
 
-    // 刷新数据
-    await loadDemands()
-    message.success('需求提交成功')
-  } catch (error) {
-    console.error('提交需求失败:', error)
-    message.error('提交失败，请重试')
+      // 刷新数据
+      await loadDemands()
+      message.success('需求提交成功')
+    } catch (error) {
+      console.error('提交需求失败:', error)
+      message.error('提交失败，请重试')
+    }
   }
-}
 
 const deleteDemand = async (id) => {
   try {
@@ -527,12 +688,72 @@ const deleteDemand = async (id) => {
   }
 }
 
-const withdrawDemand = (record) => {
-  message.info(`撤回需求: ${record.subject} ${record.grade}`)
+const withdrawDemand = async (record) => {
+  try {
+    // 显示确认对话框
+    const confirmed = window.confirm(`确定要撤回「${record.subject} ${record.grade}」的需求吗？`)
+    if (!confirmed) return
+    
+    // 更新数据库中的状态，将pending状态改为draft，并清除submitted_at
+    const { data, error } = await supabase
+      .from('teaching_demands')
+      .update({
+        status: 'draft',
+        submitted_at: null,
+        created_at: new Date().toISOString()
+      })
+      .eq('id', record.id)
+      .select()
+
+    if (error) {
+      console.error('撤回需求失败:', error)
+      message.error(`撤回失败: ${error.message}`)
+      return
+    }
+    
+    console.log('撤回成功，返回数据:', data)
+    
+    // 刷新数据
+    await loadDemands()
+    message.success('需求已成功撤回')
+  } catch (error) {
+    console.error('撤回需求异常:', error)
+    message.error('撤回失败，请重试')
+  }
 }
 
-const viewDetails = (record) => {
-  message.info(`查看需求详情: ${record.subject} ${record.grade}`)
+const viewDetails = async (record) => {
+  try {
+    // 获取完整的需求详情（包含可能未在列表中获取的字段）
+    const { data, error } = await supabase
+      .from('teaching_demands')
+      .select('*')
+      .eq('id', record.id)
+      .single()
+    
+    if (error) {
+      console.error('获取需求详情失败:', error)
+      message.error('获取详情失败')
+      return
+    }
+    
+    // 设置详情数据并显示模态框
+    currentDetailDemand.value = data
+    showDetailModal.value = true
+  } catch (error) {
+    console.error('查看需求详情异常:', error)
+    message.error('查看详情失败，请重试')
+  }
+}
+
+const closeModal = () => {
+  showAddModal.value = false
+  resetForm()
+}
+
+const closeDetailModal = () => {
+  showDetailModal.value = false
+  currentDetailDemand.value = null
 }
 </script>
 
@@ -649,6 +870,32 @@ const viewDetails = (record) => {
   border: 1px solid #BBF7D0;
 }
 
+/* 需求详情样式 */
+.detail-content {
+  padding: 16px 0;
+}
+
+.detail-row {
+  display: flex;
+  margin-bottom: 16px;
+  line-height: 24px;
+}
+
+.detail-label {
+  width: 100px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.detail-value {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.rejected-reason {
+  color: var(--error-color);
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .demand-application {
@@ -657,6 +904,14 @@ const viewDetails = (record) => {
   
   .stats-cards .ant-col {
     margin-bottom: 16px;
+  }
+  
+  .detail-row {
+    flex-direction: column;
+  }
+  
+  .detail-label {
+    margin-bottom: 4px;
   }
 }
 </style>
