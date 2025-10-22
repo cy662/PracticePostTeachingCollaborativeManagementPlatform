@@ -6,35 +6,55 @@
         <p>大学-政府-中小学三方协同管理</p>
       </div>
       
+      <a-tabs v-model:activeKey="activeTab" centered>
+        <a-tab-pane key="login" tab="登录"></a-tab-pane>
+        <a-tab-pane key="register" tab="注册"></a-tab-pane>
+      </a-tabs>
+      
       <a-form
         :model="formState"
-        name="login"
+        :name="activeTab"
         @finish="onFinish"
         class="form"
       >
         <a-form-item
-          name="username"
-          :rules="[{ required: true, message: '请输入用户名' }]"
+          name="phone"
+          :rules="[{ required: true, message: '请输入手机号' }]"
         >
-          <a-input v-model:value="formState.username" placeholder="用户名" size="large">
+          <a-input v-model:value="formState.phone" placeholder="手机号" size="large">
             <template #prefix>
-              <UserOutlined />
+              <MobileOutlined />
             </template>
           </a-input>
         </a-form-item>
 
+        <!-- 密码输入框 -->
         <a-form-item
           name="password"
-          :rules="[{ required: true, message: '请输入密码' }]"
+          :rules="[{ required: true, message: '请输入密码' }, { min: 6, message: '密码长度不能少于6位' }]"
         >
-          <a-input-password v-model:value="formState.password" placeholder="密码" size="large">
-            <template #prefix>
-              <LockOutlined />
-            </template>
-          </a-input-password>
+          <a-input-password v-model:value="formState.password" placeholder="密码" size="large" />
         </a-form-item>
 
         <a-form-item
+          v-if="activeTab === 'register'"
+          name="name"
+          :rules="[{ required: true, message: '请输入姓名' }]"
+        >
+          <a-input v-model:value="formState.name" placeholder="姓名" size="large" />
+        </a-form-item>
+
+        <a-form-item
+          v-if="activeTab === 'register'"
+          name="organization"
+          :rules="[{ required: true, message: '请输入单位名称' }]"
+        >
+          <a-input v-model:value="formState.organization" placeholder="单位/学校名称" size="large" />
+        </a-form-item>
+
+        <!-- 只在注册时显示角色选择 -->
+        <a-form-item
+          v-if="activeTab === 'register'"
           name="role"
           :rules="[{ required: true, message: '请选择角色' }]"
         >
@@ -47,7 +67,7 @@
 
         <a-form-item>
           <a-button type="primary" html-type="submit" size="large" :loading="loading" block>
-            登录
+            {{ activeTab === 'login' ? '登录' : '注册' }}
           </a-button>
         </a-form-item>
       </a-form>
@@ -58,34 +78,76 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { MobileOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { supabase } from '../lib/supabaseClient.js'
 
 const router = useRouter()
 const loading = ref(false)
+const activeTab = ref('login')
 
 const formState = reactive({
-  username: '',
-  password: '',
-  role: ''
-})
+    phone: '',
+    password: '',
+    role: '',
+    name: '',
+    organization: ''
+  })
 
 const onFinish = async (values) => {
   loading.value = true
   try {
-    // 模拟登录逻辑
-    localStorage.setItem('token', 'demo-token')
-    localStorage.setItem('userRole', values.role)
-    localStorage.setItem('username', values.username)
-    
-    message.success('登录成功')
-    
-    // 根据角色跳转到对应页面
-    setTimeout(() => {
-      router.push(`/${values.role}`)
-    }, 1000)
+    if (activeTab.value === 'login') {
+      // 登录逻辑改为使用密码验证，无需用户选择角色
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: `${formState.phone}@example.com`,
+        password: values.password
+      })
+
+      if (error) throw error
+      
+      // 查询用户角色信息
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('phone_number', formState.phone)
+        .single()
+      
+      message.success('登录成功')
+      router.push(`/${profile.role}`)
+    } else if (activeTab.value === 'register') {
+      // 注册逻辑改为使用密码验证，角色仍由用户选择
+      const { data: { user }, error: authError } = await supabase.auth.signUp({
+        email: `${formState.phone}@example.com`,
+        password: values.password,
+        options: {
+          data: {
+            phone_number: formState.phone,
+          }
+        }
+      })
+
+      if (authError) throw authError
+
+      // 保存用户信息到user_profiles表
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user.id,
+          phone_number: formState.phone,
+          name: formState.name,
+          organization: formState.organization,
+          role: values.role
+        })
+
+      if (profileError) throw profileError
+
+      message.success('注册成功')
+      formState.password = '' // 清空密码
+      activeTab.value = 'login' // 切换到登录标签页
+    }
   } catch (error) {
-    message.error('登录失败，请检查用户名和密码')
+    message.error(error.message)
   } finally {
     loading.value = false
   }

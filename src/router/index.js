@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { supabase } from '../lib/supabaseClient.js'
 
 const routes = [
   {
     path: '/',
-    redirect: '/login'
+    redirect: '/login',
+    meta: { requiresAuth: false }
   },
   {
     path: '/login',
@@ -93,13 +95,54 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
-  const isAuthenticated = localStorage.getItem('token')
-  
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    next('/login')
-  } else {
-    next()
+router.beforeEach(async (to, from, next) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    // 需要认证但未登录
+    if (to.meta.requiresAuth && !user) {
+      next('/login')
+    } 
+    // 已登录但访问登录页
+    else if (to.path === '/login' && user) {
+      // 获取用户角色并跳转到对应首页
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+        
+      if (profile) {
+        next(`/${profile.role}`)
+      } else {
+        next('/login')
+      }
+    }
+    // 检查角色权限
+    else if (to.meta.role && user) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+        
+      if (profile?.role === to.meta.role) {
+        next()
+      } else {
+        next('/login')
+      }
+    }
+    else {
+      next()
+    }
+  } catch (error) {
+    console.error('路由守卫错误:', error)
+    // 如果 Supabase 连接失败，直接跳转到登录页
+    if (to.path !== '/login') {
+      next('/login')
+    } else {
+      next()
+    }
   }
 })
 

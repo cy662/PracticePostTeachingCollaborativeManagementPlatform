@@ -6,5 +6,13 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true
+  },
+  optimizeDeps: {
+    exclude: ['tslib']
+  },
+  build: {
+    rollupOptions: {
+      external: ['tslib']
+    }
   }
 })
