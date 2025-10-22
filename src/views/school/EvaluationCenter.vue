@@ -123,9 +123,10 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { supabase } from '../../lib/supabaseClient.js'
 
 const activeTab = ref('pending')
 const showEvaluationModal = ref(false)
@@ -145,35 +146,77 @@ const evaluationForm = reactive({
   suggestions: ''
 })
 
-const pendingEvaluations = ref([
-  {
-    id: 1,
-    teacherName: '张三',
-    subject: '数学',
-    grade: '高一',
-    period: '2023-2024学年第一学期',
-    deadline: '2024-01-31'
-  },
-  {
-    id: 2,
-    teacherName: '李四',
-    subject: '语文',
-    grade: '初二',
-    period: '2023-2024学年第一学期',
-    deadline: '2024-01-31'
-  }
-])
+const pendingEvaluations = ref([])
+const completedEvaluations = ref([])
+const currentUser = ref(null)
+const loading = ref(false)
 
-const completedEvaluations = ref([
-  {
-    id: 3,
-    teacherName: '王五',
-    subject: '英语',
-    grade: '初三',
-    period: '2022-2023学年第二学期',
-    score: 92,
-    evaluateTime: '2023-07-15'
+// 获取当前用户信息
+const getCurrentUser = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      currentUser.value = user
+      return true
+    }
+    return false
+  } catch (error) {
+    console.error('获取用户信息失败:', error)
+    return false
   }
+}
+
+// 加载评价数据
+const loadEvaluations = async () => {
+  loading.value = true
+  try {
+    if (!await getCurrentUser()) return
+
+    // 查询学校信息
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('organization')
+      .eq('id', currentUser.value.id)
+      .single()
+
+    if (!profile) {
+      message.error('未找到用户组织信息')
+      return
+    }
+
+    // 查询待评价数据
+    const { data: pending, error: pendingError } = await supabase
+      .from('teacher_evaluations')
+      .select('*')
+      .eq('school_name', profile.organization)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+
+    if (pendingError) throw pendingError
+    pendingEvaluations.value = pending
+
+    // 查询已完成评价数据
+    const { data: completed, error: completedError } = await supabase
+      .from('teacher_evaluations')
+      .select('*')
+      .eq('school_name', profile.organization)
+      .eq('status', 'completed')
+      .order('evaluated_at', { ascending: false })
+
+    if (completedError) throw completedError
+    completedEvaluations.value = completed
+  } catch (error) {
+    console.error('加载评价数据失败:', error)
+    message.error('加载数据失败，请刷新页面重试')
+  } finally {
+    loading.value = false
+  }
+}
+
+// 组件挂载时加载数据
+onMounted(() => {
+  loadEvaluations()
+})
 ])
 
 const pendingColumns = [
@@ -209,32 +252,42 @@ const startEvaluation = (record) => {
 const submitEvaluation = async () => {
   evaluationLoading.value = true
   try {
-    // 模拟提交评价
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
+    // 计算总分
     const score = Object.values(evaluationForm).reduce((sum, value) => {
       return typeof value === 'number' ? sum + value : sum
     }, 0) * 4
+
+    // 保存评价到数据库
+    const { error } = await supabase
+      .from('teacher_evaluations')
+      .update({
+        status: 'completed',
+        score: score,
+        teaching_content_score: evaluationForm.teachingContent,
+        teaching_method_score: evaluationForm.teachingMethod,
+        classroom_management_score: evaluationForm.classroomManagement,
+        responsibility_score: evaluationForm.responsibility,
+        teamwork_score: evaluationForm.teamwork,
+        learning_progress_score: evaluationForm.learningProgress,
+        overall_score: evaluationForm.overallScore,
+        comments: evaluationForm.comments,
+        suggestions: evaluationForm.suggestions,
+        evaluated_at: new Date().toISOString(),
+        evaluated_by: currentUser.value.id
+      })
+      .eq('id', currentTeacher.value.id)
+
+    if (error) throw error
     
-    completedEvaluations.value.push({
-      id: Date.now(),
-      teacherName: currentTeacher.value.teacherName,
-      subject: currentTeacher.value.subject,
-      grade: currentTeacher.value.grade,
-      period: evaluationForm.period,
-      score: score,
-      evaluateTime: new Date().toISOString().split('T')[0]
-    })
-    
-    pendingEvaluations.value = pendingEvaluations.value.filter(
-      evaluation => evaluation.id !== currentTeacher.value.id
-    )
+    // 刷新数据
+    await loadEvaluations()
     
     message.success('评价提交成功')
     showEvaluationModal.value = false
     resetEvaluationForm()
   } catch (error) {
-    message.error('评价提交失败')
+    console.error('提交评价失败:', error)
+    message.error('评价提交失败，请重试')
   } finally {
     evaluationLoading.value = false
   }
@@ -244,7 +297,8 @@ const viewEvaluation = (record) => {
   message.info(`查看评价详情: ${record.teacherName}`)
 }
 
-const refreshEvaluations = () => {
+const refreshEvaluations = async () => {
+  await loadEvaluations()
   message.success('数据已刷新')
 }
 

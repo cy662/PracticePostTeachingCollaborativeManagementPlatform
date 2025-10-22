@@ -217,9 +217,9 @@
           </a-radio-group>
         </a-form-item>
         
-        <a-form-item label="特殊要求">
+        <a-form-item label="特殊要求" name="specialRequirements">
           <a-textarea
-            v-model:value="addForm.requirements"
+            v-model:value="addForm.specialRequirements"
             placeholder="请输入特殊要求（如：需要有班主任经验、擅长多媒体教学等）"
             :rows="3"
             show-count
@@ -238,66 +238,100 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { supabase } from '../../lib/supabaseClient.js'
 
+// 标签页状态
 const activeTab = ref('draft')
+
+// 新增需求模态框
 const showAddModal = ref(false)
 const addLoading = ref(false)
+const loading = ref(false)
 
+// 新增需求表单
 const addForm = reactive({
   subject: '',
   grade: '',
   demand: 1,
   duration: '',
   urgency: 'medium',
-  requirements: ''
+  specialRequirements: ''
 })
 
-const draftDemands = ref([
-  {
-    id: 1,
-    subject: '数学',
-    grade: '高一',
-    demand: 2,
-    duration: '2023-2024学年',
-    urgency: 'high',
-    createTime: '2023-10-20'
-  },
-  {
-    id: 2,
-    subject: '英语',
-    grade: '初中二年级',
-    demand: 1,
-    duration: '2023-2024学年',
-    urgency: 'medium',
-    createTime: '2023-10-18'
-  }
-])
+// 数据存储
+const draftDemands = ref([])
+const submittedDemands = ref([])
+const currentUser = ref(null)
 
-const submittedDemands = ref([
-  {
-    id: 3,
-    subject: '语文',
-    grade: '初二',
-    demand: 1,
-    duration: '2023-2024学年',
-    urgency: 'medium',
-    submitTime: '2023-10-19',
-    status: 'pending'
-  },
-  {
-    id: 4,
-    subject: '物理',
-    grade: '高中二年级',
-    demand: 1,
-    duration: '2023-2024学年',
-    urgency: 'low',
-    submitTime: '2023-10-15',
-    status: 'approved'
+// 获取当前用户信息
+const getCurrentUser = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      currentUser.value = user
+      return true
+    }
+    return false
+  } catch (error) {
+    console.error('获取用户信息失败:', error)
+    return false
   }
-])
+}
+
+// 从数据库加载需求数据
+const loadDemands = async () => {
+  loading.value = true
+  try {
+    if (!await getCurrentUser()) return
+
+    // 查询学校信息以获取school_id
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('organization')
+      .eq('id', currentUser.value.id)
+      .single()
+
+    if (!profile) {
+      message.error('未找到用户组织信息')
+      return
+    }
+
+    // 查询草稿需求
+    const { data: drafts, error: draftError } = await supabase
+      .from('teaching_demands')
+      .select('*')
+      .eq('organization', profile.organization)
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+
+    if (draftError) throw draftError
+    draftDemands.value = drafts
+
+    // 查询已提交需求
+    const { data: submitted, error: submittedError } = await supabase
+      .from('teaching_demands')
+      .select('*')
+      .eq('organization', profile.organization)
+      .neq('status', 'draft')
+      .order('submitted_at', { ascending: false })
+
+    if (submittedError) throw submittedError
+    submittedDemands.value = submitted
+  } catch (error) {
+    console.error('加载需求数据失败:', error)
+    message.error('加载数据失败，请刷新页面重试')
+  } finally {
+    loading.value = false
+  }
+}
+
+// 组件挂载时加载数据
+onMounted(() => {
+  loadDemands()
+})
 
 // 统计数据
 const stats = computed(() => {
@@ -387,17 +421,49 @@ const getUrgencyText = (urgency) => {
 const handleAdd = async () => {
   addLoading.value = true
   try {
-    // 模拟添加逻辑
-    draftDemands.value.push({
-      id: Date.now(),
-      ...addForm,
-      createTime: new Date().toISOString().split('T')[0]
-    })
+    if (!await getCurrentUser()) return
+
+    // 查询学校信息
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('organization')
+      .eq('id', currentUser.value.id)
+      .single()
+
+    if (!profile) {
+      message.error('未找到用户组织信息')
+      return
+    }
+
+    // 保存到数据库
+    const { data, error } = await supabase
+      .from('teaching_demands')
+      .insert({
+        subject: addForm.subject,
+        grade: addForm.grade,
+        demand_count: addForm.demand,
+        duration: addForm.duration,
+        urgency: addForm.urgency,
+        special_requirements: addForm.specialRequirements,
+        status: 'draft',
+        organization: profile.organization,
+        created_by: currentUser.value.id,
+        created_at: new Date().toISOString()
+      })
+      .select()
+
+    if (error) throw error
+
     message.success({
       content: '需求已保存为草稿',
       className: 'success-message'
     })
+    
+    // 刷新数据
+    await loadDemands()
+    
     showAddModal.value = false
+    // 重置表单
     Object.keys(addForm).forEach(key => {
       if (key !== 'urgency') {
         addForm[key] = key === 'demand' ? 1 : ''
@@ -405,13 +471,15 @@ const handleAdd = async () => {
     })
     addForm.urgency = 'medium'
   } catch (error) {
-    message.error('保存失败')
+    console.error('保存需求失败:', error)
+    message.error('保存失败，请重试')
   } finally {
     addLoading.value = false
   }
 }
 
-const refreshData = () => {
+const refreshData = async () => {
+  await loadDemands()
   message.success('数据已刷新')
 }
 
@@ -421,23 +489,42 @@ const editDemand = (record) => {
 
 const submitDemand = async (record) => {
   try {
-    // 模拟提交逻辑
-    await new Promise(resolve => setTimeout(resolve, 500))
-    submittedDemands.value.push({
-      ...record,
-      submitTime: new Date().toISOString().split('T')[0],
-      status: 'pending'
-    })
-    draftDemands.value = draftDemands.value.filter(d => d.id !== record.id)
+    // 更新数据库中的状态
+    const { error } = await supabase
+      .from('teaching_demands')
+      .update({
+        status: 'pending',
+        submitted_at: new Date().toISOString()
+      })
+      .eq('id', record.id)
+
+    if (error) throw error
+
+    // 刷新数据
+    await loadDemands()
     message.success('需求提交成功')
   } catch (error) {
-    message.error('提交失败')
+    console.error('提交需求失败:', error)
+    message.error('提交失败，请重试')
   }
 }
 
-const deleteDemand = (id) => {
-  draftDemands.value = draftDemands.value.filter(d => d.id !== id)
-  message.success('删除成功')
+const deleteDemand = async (id) => {
+  try {
+    const { error } = await supabase
+      .from('teaching_demands')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
+
+    // 刷新数据
+    await loadDemands()
+    message.success('删除成功')
+  } catch (error) {
+    console.error('删除需求失败:', error)
+    message.error('删除失败，请重试')
+  }
 }
 
 const withdrawDemand = (record) => {
