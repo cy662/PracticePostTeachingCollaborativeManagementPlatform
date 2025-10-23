@@ -45,10 +45,10 @@
     <!-- 操作栏 -->
     <div class="action-bar">
       <a-space>
-        <a-button @click="refreshDemands">
-          <template #icon><ReloadOutlined /></template>
-          刷新数据
-        </a-button>
+        <a-button :loading="loading" @click="refreshDemands">
+            <template #icon><ReloadOutlined /></template>
+            刷新数据
+          </a-button>
         <a-button @click="exportData">
           <template #icon><DownloadOutlined /></template>
           导出报表
@@ -166,9 +166,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { supabase } from '../../lib/supabaseClient.js'
 
 const activeTab = ref('pending')
 const showRejectModal = ref(false)
@@ -179,62 +180,10 @@ const rejectForm = reactive({
   reason: ''
 })
 
-const pendingDemands = ref([
-  {
-    id: 1,
-    schoolName: '北京市第一中学',
-    subject: '数学',
-    grade: '高一',
-    demand: 2,
-    duration: '2023-2024学年',
-    urgency: 'high',
-    submitTime: '2023-10-20',
-    region: '北京市',
-    contact: '张老师 138****1234'
-  },
-  {
-    id: 2,
-    schoolName: '上海市实验学校',
-    subject: '语文',
-    grade: '初二',
-    demand: 1,
-    duration: '2023-2024学年',
-    urgency: 'medium',
-    submitTime: '2023-10-19',
-    region: '上海市',
-    contact: '李老师 139****5678'
-  },
-  {
-    id: 3,
-    schoolName: '广州市第七中学',
-    subject: '英语',
-    grade: '初三',
-    demand: 1,
-    duration: '2023-2024学年',
-    urgency: 'low',
-    submitTime: '2023-10-18',
-    region: '广州市',
-    contact: '王老师 136****9012'
-  }
-])
-
-const approvedDemands = ref([
-  {
-    id: 4,
-    schoolName: '深圳市实验学校',
-    subject: '物理',
-    grade: '高二',
-    demand: 1,
-    duration: '2023-2024学年',
-    urgency: 'medium',
-    submitTime: '2023-10-15',
-    region: '深圳市',
-    contact: '赵老师 135****3456',
-    approveTime: '2023-10-17'
-  }
-])
-
+const pendingDemands = ref([])
+const approvedDemands = ref([])
 const rejectedDemands = ref([])
+const loading = ref(false)
 
 // 统计数据
 const stats = computed(() => {
@@ -246,6 +195,126 @@ const stats = computed(() => {
   return { total, pending, approved, approvalRate }
 })
 
+// 格式化日期
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toISOString().split('T')[0]
+}
+
+// 从数据库获取真实需求数据
+const fetchDemands = async () => {
+  console.log('fetchDemands函数被调用');
+  loading.value = true
+  
+  try {
+    // 检查Supabase客户端是否正确初始化
+    if (!supabase) {
+      alert('Supabase客户端未正确初始化');
+      console.error('Supabase客户端未定义');
+      message.error('数据库连接失败');
+      loading.value = false;
+      return;
+    }
+    
+    // 尝试查询两个可能的表名，解决表名不一致问题
+    let demands = null;
+    let error = null;
+    
+    // 首先尝试从teaching_demands表获取数据（与更新操作使用相同的表名）
+    console.log('尝试从teaching_demands表获取数据...');
+    const result1 = await supabase
+      .from('teaching_demands')
+      .select('*');
+    
+    if (!result1.error) {
+      // 如果从teaching_demands表成功获取数据
+      console.log('成功从teaching_demands表获取数据');
+      demands = result1.data;
+    } else {
+      // 如果失败，尝试从school_demands表获取数据
+      console.log('从teaching_demands表获取数据失败，尝试从school_demands表获取...');
+      console.error('错误详情:', result1.error);
+      
+      const result2 = await supabase
+        .from('school_demands')
+        .select('*');
+      
+      if (!result2.error) {
+        console.log('成功从school_demands表获取数据');
+        demands = result2.data;
+      } else {
+        console.error('从school_demands表获取数据也失败:', result2.error);
+        error = result2.error;
+      }
+    }
+    
+    if (error) {
+      alert('获取需求数据失败: ' + error.message);
+      console.error('错误详情:', error);
+      message.error('数据库查询失败');
+      loading.value = false;
+      return;
+    }
+    
+    // 清空现有数据
+    pendingDemands.value = []
+    approvedDemands.value = []
+    rejectedDemands.value = []
+    
+    if (demands && Array.isArray(demands) && demands.length > 0) {
+      console.log('成功获取到 ' + demands.length + ' 条真实需求数据');
+      console.log('获取的数据:', demands);
+      
+      // 处理并分类数据
+      demands.forEach((demand, index) => {
+        // 为每条记录创建格式化对象
+        const formattedDemand = {
+          id: demand.id || `unknown_${index}`,
+          schoolName: demand.school_name || demand.organization || '未知学校',
+          subject: demand.subject || '未知科目',
+          grade: demand.grade || '未知年级',
+          demand: demand.demand_count || demand.count || 0,
+          duration: demand.duration || '未知时长',
+          urgency: demand.urgency || '普通',
+          submitTime: demand.created_at ? formatDate(demand.created_at) : (demand.submitted_at ? formatDate(demand.submitted_at) : '未设置'),
+          contact: demand.contact_info || demand.contact || '联系方式待补充',
+          specialRequirements: demand.special_requirements || '无特殊要求',
+          rejectedReason: demand.rejection_reason || '',
+          approveTime: demand.approved_at ? formatDate(demand.approved_at) : '',
+          rejectTime: demand.rejected_at ? formatDate(demand.rejected_at) : ''
+        }
+        
+        // 根据状态分类
+        const status = demand.status || 'pending';
+        
+        if (status === 'pending' || status === '待审核') {
+          pendingDemands.value.push(formattedDemand)
+        } else if (status === 'approved' || status === '已通过') {
+          approvedDemands.value.push(formattedDemand)
+        } else if (status === 'rejected' || status === '已驳回') {
+          rejectedDemands.value.push(formattedDemand)
+        } else {
+          pendingDemands.value.push(formattedDemand)
+        }
+      });
+      
+      // 成功提示
+      message.success(`成功从数据库获取 ${demands.length} 条需求数据`)
+    } else {
+      message.info('当前暂无需求数据');
+    }
+    
+  } catch (err) {
+    console.error('异常:', err);
+    message.error('获取数据时发生系统错误: ' + err.message);
+  } finally {
+    loading.value = false;
+  }
+}
+
+// 刷新数据功能在文件末尾实现
+
 const columns = [
   { 
     title: '学校名称', 
@@ -253,12 +322,7 @@ const columns = [
     key: 'schoolName',
     width: 150
   },
-  { 
-    title: '所在地区', 
-    dataIndex: 'region', 
-    key: 'region',
-    width: 100
-  },
+  
   { 
     title: '学科', 
     dataIndex: 'subject', 
@@ -327,8 +391,48 @@ const getUrgencyText = (urgency) => {
 
 const approveDemand = async (demand) => {
   try {
-    // 模拟审核通过逻辑
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // 更新数据库中的需求状态 - 尝试两个可能的表名
+    let updateSuccess = false;
+    
+    // 尝试更新teaching_demands表
+    console.log('尝试更新teaching_demands表中的需求状态...');
+    const result1 = await supabase
+      .from('teaching_demands')
+      .update({
+        status: 'approved',
+        approved_at: new Date().toISOString()
+      })
+      .eq('id', demand.id)
+
+    if (!result1.error) {
+      console.log('成功更新teaching_demands表中的需求状态');
+      updateSuccess = true;
+    } else {
+      // 如果失败，尝试更新school_demands表
+      console.log('更新teaching_demands表失败，尝试更新school_demands表...');
+      console.error('错误详情:', result1.error);
+      
+      const result2 = await supabase
+        .from('school_demands')
+        .update({
+          status: 'approved',
+          approved_at: new Date().toISOString()
+        })
+        .eq('id', demand.id)
+      
+      if (!result2.error) {
+        console.log('成功更新school_demands表中的需求状态');
+        updateSuccess = true;
+      }
+    }
+
+    if (!updateSuccess) {
+      console.error('审核通过失败');
+      message.error('审核通过失败，请稍后重试')
+      return
+    }
+
+    // 更新本地数据
     approvedDemands.value.push({
       ...demand,
       approveTime: new Date().toISOString().split('T')[0]
@@ -339,7 +443,8 @@ const approveDemand = async (demand) => {
       className: 'success-message'
     })
   } catch (error) {
-    message.error('操作失败')
+    console.error('审核通过时发生错误:', error)
+    message.error('系统错误，请稍后重试')
   }
 }
 
@@ -356,8 +461,50 @@ const handleReject = async () => {
 
   rejectLoading.value = true
   try {
-    // 模拟驳回逻辑
-    await new Promise(resolve => setTimeout(resolve, 800))
+    // 更新数据库中的需求状态 - 尝试两个可能的表名
+    let updateSuccess = false;
+    
+    // 尝试更新teaching_demands表
+    console.log('尝试更新teaching_demands表中的需求状态...');
+    const result1 = await supabase
+      .from('teaching_demands')
+      .update({
+        status: 'rejected',
+        rejected_reason: rejectForm.reason,
+        rejected_at: new Date().toISOString()
+      })
+      .eq('id', currentDemand.value.id)
+
+    if (!result1.error) {
+      console.log('成功更新teaching_demands表中的需求状态');
+      updateSuccess = true;
+    } else {
+      // 如果失败，尝试更新school_demands表
+      console.log('更新teaching_demands表失败，尝试更新school_demands表...');
+      console.error('错误详情:', result1.error);
+      
+      const result2 = await supabase
+        .from('school_demands')
+        .update({
+          status: 'rejected',
+          rejected_reason: rejectForm.reason,
+          rejected_at: new Date().toISOString()
+        })
+        .eq('id', currentDemand.value.id)
+      
+      if (!result2.error) {
+        console.log('成功更新school_demands表中的需求状态');
+        updateSuccess = true;
+      }
+    }
+
+    if (!updateSuccess) {
+      console.error('驳回需求失败');
+      message.error('驳回需求失败，请稍后重试')
+      return
+    }
+
+    // 更新本地数据
     rejectedDemands.value.push({
       ...currentDemand.value,
       rejectReason: rejectForm.reason,
@@ -371,27 +518,44 @@ const handleReject = async () => {
     showRejectModal.value = false
     rejectForm.reason = ''
   } catch (error) {
-    message.error('操作失败')
+    console.error('驳回需求时发生错误:', error)
+    message.error('系统错误，请稍后重试')
   } finally {
     rejectLoading.value = false
   }
 }
 
 const exportData = () => {
-  message.success('数据导出成功')
+  message.success('数据导出功能开发中')
 }
 
-const publishPosition = (demand) => {
-  message.success(`已发布岗位: ${demand.schoolName}`)
+const publishPosition = async (demand) => {
+  try {
+    // 这里可以实现发布岗位的逻辑
+    message.success(`已发布岗位: ${demand.schoolName}`)
+  } catch (error) {
+    console.error('发布岗位失败:', error)
+    message.error('发布岗位失败，请稍后重试')
+  }
 }
 
 const viewDetails = (record) => {
-  message.info(`查看需求详情: ${record.schoolName}`)
+  // 这里可以实现查看详情的模态框
+  console.log('查看需求详情:', record)
+  message.info(`查看需求详情: ${record.schoolName}\n学科: ${record.subject}\n年级: ${record.grade}\n需求人数: ${record.demand}\n${record.specialRequirements ? '特殊要求: ' + record.specialRequirements : ''}`)
 }
 
 const refreshDemands = () => {
+  fetchDemands()
   message.success('数据已刷新')
 }
+
+// 页面加载时获取数据
+onMounted(() => {
+  // 组件挂载时获取待审核需求
+  console.log('组件已挂载，开始获取需求数据');
+  fetchDemands()
+})
 </script>
 
 <style scoped>

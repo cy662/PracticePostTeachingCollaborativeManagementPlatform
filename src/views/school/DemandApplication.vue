@@ -218,6 +218,15 @@
           </a-radio-group>
         </a-form-item>
         
+        <a-form-item label="负责人联系方式" required name="contact">
+          <a-input
+            v-model:value="addForm.contact"
+            placeholder="请输入负责人手机号或邮箱"
+            show-count
+            :maxlength="100"
+          />
+        </a-form-item>
+        
         <a-form-item label="特殊要求" name="specialRequirements">
           <a-textarea
             v-model:value="addForm.specialRequirements"
@@ -281,6 +290,10 @@
           <div class="detail-label">提交时间：</div>
           <div class="detail-value">{{ formatDateForDisplay(currentDetailDemand.submitted_at) }}</div>
         </div>
+        <div class="detail-row" v-if="currentDetailDemand.contact">
+          <div class="detail-label">负责人联系方式：</div>
+          <div class="detail-value">{{ currentDetailDemand.contact }}</div>
+        </div>
         <div class="detail-row" v-if="currentDetailDemand.special_requirements">
           <div class="detail-label">特殊要求：</div>
           <div class="detail-value">{{ currentDetailDemand.special_requirements }}</div>
@@ -322,7 +335,8 @@ const addForm = reactive({
   demand: 1,
   duration: '',
   urgency: 'medium',
-  specialRequirements: ''
+  specialRequirements: '',
+  contact: ''
 })
 
 // 数据存储
@@ -513,8 +527,8 @@ const resetForm = () => {
 
 const handleAdd = async () => {
   // 添加必填字段验证
-  if (!addForm.subject || !addForm.grade || !addForm.demand || !addForm.duration) {
-    message.error('请填写必填字段')
+  if (!addForm.subject || !addForm.grade || !addForm.demand || !addForm.duration || !addForm.contact) {
+    message.error('请填写必填字段，包括负责人联系方式')
     return
   }
   
@@ -551,7 +565,8 @@ const handleAdd = async () => {
       demand_count: parseInt(addForm.demand) || 1,
       duration: addForm.duration,
       urgency: addForm.urgency || 'medium',
-      special_requirements: addForm.specialRequirements || ''
+      special_requirements: addForm.specialRequirements || '',
+      contact: addForm.contact || ''
     }
 
     if (isEditMode.value && currentDemandId.value) {
