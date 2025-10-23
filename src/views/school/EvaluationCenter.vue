@@ -217,7 +217,6 @@ const loadEvaluations = async () => {
 onMounted(() => {
   loadEvaluations()
 })
-])
 
 const pendingColumns = [
   { title: '教师姓名', dataIndex: 'teacherName', key: 'teacherName' },
