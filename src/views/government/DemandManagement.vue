@@ -170,6 +170,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../../lib/supabaseClient.js'
+import * as XLSX from 'xlsx'
 
 const activeTab = ref('pending')
 const showRejectModal = ref(false)
@@ -526,7 +527,76 @@ const handleReject = async () => {
 }
 
 const exportData = () => {
-  message.success('数据导出功能开发中')
+  try {
+    // 总是导出所有状态的数据（未审批、审批通过和驳回的）
+    let dataToExport = [...pendingDemands.value, ...approvedDemands.value, ...rejectedDemands.value]
+    let fileNamePrefix = '全部'
+    
+    if (dataToExport.length === 0) {
+      message.warning('当前没有可导出的数据')
+      return
+    }
+    
+    // 准备Excel数据格式
+    const excelData = dataToExport.map(demand => {
+      // 根据需求的实际状态获取状态文本
+      let statusText = '未知'
+      if (pendingDemands.value.some(item => item.id === demand.id)) {
+        statusText = '待审核'
+      } else if (approvedDemands.value.some(item => item.id === demand.id)) {
+        statusText = '已通过'
+      } else if (rejectedDemands.value.some(item => item.id === demand.id)) {
+        statusText = '已驳回'
+      }
+      
+      return {
+        '学校名称': demand.schoolName || '',
+        '学科': demand.subject || '',
+        '年级': demand.grade || '',
+        '需求人数': demand.demand || 0,
+        '支教时间': demand.duration || '',
+        '紧急程度': getUrgencyText(demand.urgency) || '',
+        '提交时间': demand.submitTime || '',
+        '联系方式': demand.contact || '',
+        '特殊要求': demand.specialRequirements || '',
+        '审批状态': statusText
+      }
+    })
+    
+    // 创建工作簿和工作表
+    const ws = XLSX.utils.json_to_sheet(excelData)
+    
+    // 设置列宽
+    const colWidths = [
+      { wch: 20 }, // 学校名称
+      { wch: 10 }, // 学科
+      { wch: 10 }, // 年级
+      { wch: 10 }, // 需求人数
+      { wch: 15 }, // 支教时间
+      { wch: 10 }, // 紧急程度
+      { wch: 15 }, // 提交时间
+      { wch: 20 }, // 联系方式
+      { wch: 30 }, // 特殊要求
+      { wch: 10 }  // 审批状态
+    ]
+    ws['!cols'] = colWidths
+    
+    // 创建工作簿并添加工作表
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '需求数据')
+    
+    // 生成文件名
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const fileName = `${fileNamePrefix}需求报表_${timestamp}.xlsx`
+    
+    // 导出Excel文件
+    XLSX.writeFile(wb, fileName)
+    
+    message.success(`成功导出${dataToExport.length}条数据为Excel格式`)  
+  } catch (error) {
+    console.error('导出Excel时发生错误:', error)
+    message.error('Excel导出失败，请稍后重试')
+  }
 }
 
 const publishPosition = async (demand) => {
