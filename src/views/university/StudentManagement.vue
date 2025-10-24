@@ -94,6 +94,9 @@
           <template v-else-if="column.key === 'performance'">
             <a-rate :value="record.performance" disabled />
           </template>
+          <template v-else-if="column.key === 'created_at'">
+            {{ formatDateTimeToCST(record.created_at) }}
+          </template>
         </template>
       </a-table>
     </a-card>
@@ -424,6 +427,30 @@ const getStatusText = (status) => {
     completed: '已完成'
   }
   return texts[status] || '未知'
+}
+
+// 格式化时间为东八区（CST）格式
+const formatDateTimeToCST = (dateString) => {
+  if (!dateString) return ''
+  
+  try {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return ''
+    
+    // 添加8小时转换为东八区时间
+    const cstDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+    
+    const year = cstDate.getUTCFullYear()
+    const month = String(cstDate.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(cstDate.getUTCDate()).padStart(2, '0')
+    const hours = String(cstDate.getUTCHours()).padStart(2, '0')
+    const minutes = String(cstDate.getUTCMinutes()).padStart(2, '0')
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}`
+  } catch (error) {
+    console.error('日期格式化错误:', error)
+    return ''
+  }
 }
 
 const handleAdd = async () => {
