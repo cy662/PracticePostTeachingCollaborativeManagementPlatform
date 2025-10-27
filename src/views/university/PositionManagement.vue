@@ -136,12 +136,12 @@ const pagination = {
   total: 0
 }
 
-// 获取审批通过的岗位数据
+// 获取审批通过和已分配的岗位数据
 const fetchApprovedPositions = async () => {
   positionsLoading.value = true
   try {
-    // 从数据库获取政府管理员审批通过的中小学申请
-    const { data, error } = await supabase
+    // 首先获取已批准的岗位数据
+    const { data: demandsData, error: demandsError } = await supabase
       .from('teaching_demands')
       .select(`
         id,
@@ -153,26 +153,101 @@ const fetchApprovedPositions = async () => {
         created_at,
         organization
       `)
-      .eq('status', 'approved')
+      .in('status', ['approved', 'assigned'])
       .order('created_at', { ascending: false })
 
-    if (error) {
-      throw error
+    if (demandsError) {
+      console.error('获取岗位失败:', demandsError)
+      message.error('获取岗位数据失败，请稍后重试')
+      // 出错时显示模拟数据
+      positions.value = mockPositions
+      pagination.total = positions.value.length
+      return
     }
 
-    console.log('获取到的数据:', data)
+    console.log('获取到的岗位数据:', demandsData)
 
-    // 转换数据格式
-    positions.value = data.map(item => ({
-      id: item.id,
-      schoolName: item.organization || '未知学校',
-      subject: item.subject,
-      grade: item.grade,
-      demand: item.demand_count,
-      duration: item.duration,
-      applicationTime: formatDate(item.created_at),
-      status: 'pending' // 审批通过后初始状态为待分配
-    }))
+    // 如果没有数据，尝试获取所有状态的岗位以排除状态问题
+    if (!demandsData || demandsData.length === 0) {
+      const { data: allStatusData, error: allStatusError } = await supabase
+        .from('teaching_demands')
+        .select(`
+          id,
+          subject,
+          grade,
+          demand_count,
+          duration,
+          status,
+          created_at,
+          organization
+        `)
+        .order('created_at', { ascending: false })
+
+      if (!allStatusError && allStatusData && allStatusData.length > 0) {
+        console.log('获取到的所有状态岗位数据:', allStatusData)
+        // 显示所有状态的岗位，供调试使用
+        positions.value = allStatusData.map(item => ({
+          id: item.id,
+          schoolName: item.organization || '未知学校',
+          subject: item.subject,
+          grade: item.grade,
+          demand: item.demand_count,
+          duration: item.duration,
+          applicationTime: formatDate(item.created_at),
+          status: item.status
+        }))
+      } else {
+        // 没有数据时使用模拟数据
+        positions.value = mockPositions
+        console.log('没有找到任何岗位数据，使用模拟数据')
+      }
+    } else {
+      // 获取当前查询到的岗位ID列表
+        const demandIds = demandsData.map(item => item.id)
+        
+        // 只查询与这些岗位相关的学生分配记录
+        const { data: assignmentsData, error: assignmentsError } = await supabase
+          .from('student_assignments')
+          .select('teaching_demand_id')
+          .eq('status', 'active')
+          .in('teaching_demand_id', demandIds)
+
+      if (assignmentsError) {
+        console.error('获取学生分配记录失败:', assignmentsError)
+      }
+
+      // 创建已分配岗位ID的集合
+      const assignedPositionIds = new Set()
+      if (assignmentsData && assignmentsData.length > 0) {
+        assignmentsData.forEach(assignment => {
+          if (assignment.teaching_demand_id) {
+            assignedPositionIds.add(assignment.teaching_demand_id)
+          }
+        })
+      }
+
+      console.log('已分配的岗位ID集合:', Array.from(assignedPositionIds))
+
+      // 转换数据格式，根据是否有学生分配记录确定状态
+      positions.value = demandsData.map(item => {
+        // 确定状态：如果数据库中是assigned状态，或者有对应的分配记录，则状态为assigned
+        let displayStatus = item.status
+        if (item.status === 'approved' && assignedPositionIds.has(item.id)) {
+          displayStatus = 'assigned'
+        }
+        
+        return {
+          id: item.id,
+          schoolName: item.organization || '未知学校',
+          subject: item.subject,
+          grade: item.grade,
+          demand: item.demand_count,
+          duration: item.duration,
+          applicationTime: formatDate(item.created_at),
+          status: displayStatus
+        }
+      })
+    }
 
     pagination.total = positions.value.length
   } catch (error) {
@@ -301,11 +376,54 @@ const handleAssign = async () => {
 
   assignLoading.value = true
   try {
-    // 由于数据库中可能没有定义rpc函数，这里先更新本地状态
-    // TODO: 后续可以添加实际的数据库更新逻辑
+    // 开启事务，确保数据一致性
+    await supabase.rpc('start_transaction')
     
-    // 模拟API调用延迟
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // 更新学生状态并创建分配记录
+    for (const student of selectedStudents.value) {
+      // 更新数据库中的学生状态
+      const { error: studentError } = await supabase
+        .from('students')
+        .update({ 
+          status: 'assigned',
+          teaching_subject: currentPosition.value.subject,
+          teaching_grade: currentPosition.value.grade
+        })
+        .eq('id', student.id)
+      
+      if (studentError) {
+        throw studentError
+      }
+      
+      // 创建学生分配记录到student_assignments表
+      const { error: assignmentError } = await supabase
+        .from('student_assignments')
+        .insert({
+          student_id: student.id,
+          school_name: currentPosition.value.schoolName,
+          teaching_subject: currentPosition.value.subject,
+          teaching_grade: currentPosition.value.grade,
+          assignment_period: currentPosition.value.duration,
+          start_date: new Date(), // 使用当前日期作为开始日期
+          status: 'active',
+          teaching_demand_id: currentPosition.value.id, // 添加关联到教学需求ID
+          assigned_by: await supabase.auth.getUser().then(res => res.data.user?.id)
+        })
+      
+      if (assignmentError) {
+        throw assignmentError
+      }
+    }
+    
+    // 更新teaching_demands表中的岗位状态
+    const { error: demandError } = await supabase
+      .from('teaching_demands')
+      .update({ status: 'assigned' })
+      .eq('id', currentPosition.value.id)
+    
+    if (demandError) {
+      throw demandError
+    }
     
     // 更新本地状态
     const positionIndex = positions.value.findIndex(p => p.id === currentPosition.value.id)
@@ -313,15 +431,39 @@ const handleAssign = async () => {
       positions.value[positionIndex].status = 'assigned'
     }
     
-    console.log('学生分配成功:', selectedStudents.value, '到岗位:', currentPosition.value.id)
+    // 提交事务
+    await supabase.rpc('commit_transaction')
+    
+    console.log('学生分配成功并记录关联关系:', selectedStudents.value, '到岗位:', currentPosition.value.id)
 
     message.success('分配成功')
     showAssignModal.value = false
     selectedStudents.value = []
+    
+    // 通知其他身份页面更新数据
+    // 使用更明确的事件名称，确保其他组件能正确响应
+    window.dispatchEvent(new CustomEvent('teachingAssignmentUpdated', {
+      detail: {
+        positionId: currentPosition.value.id,
+        schoolName: currentPosition.value.schoolName,
+        assignedStudentIds: selectedStudents.value.map(s => s.id)
+      }
+    }))
+    
+    // 保留原有的学生状态变更事件，确保StudentManagement页面更新
+    window.dispatchEvent(new CustomEvent('studentStatusChanged'))
   } catch (error) {
     console.error('分配学生失败:', error)
     message.error('分配失败，请稍后重试')
-    // 即使失败也关闭模态框，避免数据不一致
+    
+    // 回滚事务
+    try {
+      await supabase.rpc('rollback_transaction')
+    } catch (rollbackError) {
+      console.error('事务回滚失败:', rollbackError)
+    }
+    
+    // 关闭模态框
     showAssignModal.value = false
     selectedStudents.value = []
   } finally {

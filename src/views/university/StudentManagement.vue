@@ -72,7 +72,7 @@
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="() => handleEditClick(record)">
-                编辑
+                修改
               </a-button>
               <a-popconfirm 
                 title="确定删除这个学生吗？" 
@@ -96,6 +96,9 @@
           </template>
           <template v-else-if="column.key === 'created_at'">
             {{ formatDateTimeToCST(record.created_at) }}
+          </template>
+          <template v-else-if="column.key === 'gender'">
+            {{ getGenderText(record.gender) }}
           </template>
         </template>
       </a-table>
@@ -163,10 +166,10 @@
       </div>
     </a-modal>
 
-    <!-- 添加/编辑学生模态框 -->
+    <!-- 添加学生模态框 -->
     <a-modal
       v-model:open="showAddModal"
-      :title="isEditing ? '编辑学生' : '添加学生'"
+      title="添加学生"
       width="600px"
       @ok="handleModalOk"
       @cancel="handleModalCancel"
@@ -251,20 +254,112 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 修改学生模态框 -->
+    <a-modal
+      v-model:open="showEditModal"
+      title="修改学生信息"
+      width="600px"
+      @ok="handleEditSubmit"
+      @cancel="handleEditCancel"
+      :confirm-loading="editLoading"
+    >
+      <a-form :model="editForm" layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="姓名" required>
+              <a-input v-model:value="editForm.name" placeholder="请输入学生姓名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="学号" required>
+              <a-input v-model:value="editForm.studentId" placeholder="请输入学号" disabled />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="性别" required>
+              <a-select v-model:value="editForm.gender">
+                <a-select-option value="male">男</a-select-option>
+                <a-select-option value="female">女</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="出生日期">
+              <a-date-picker v-model:value="editForm.birthDate" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="联系电话">
+              <a-input v-model:value="editForm.phone" placeholder="请输入联系电话" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="邮箱">
+              <a-input v-model:value="editForm.email" placeholder="请输入邮箱" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="专业" required>
+              <a-input v-model:value="editForm.major" placeholder="请输入专业名称" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="年级" required>
+              <a-select v-model:value="editForm.grade">
+                <a-select-option value="大一">大一</a-select-option>
+                <a-select-option value="大二">大二</a-select-option>
+                <a-select-option value="大三">大三</a-select-option>
+                <a-select-option value="大四">大四</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="班级">
+              <a-input v-model:value="editForm.className" placeholder="请输入班级" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="入学年份" required>
+              <a-input-number v-model:value="editForm.admissionYear" style="width: 100%" :min="2000" :max="2030" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        
+        <a-form-item label="支教科目">
+          <a-input v-model:value="editForm.teachingSubject" placeholder="请输入支教科目" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { UploadOutlined, PlusOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../../lib/supabaseClient.js'
 import * as XLSX from 'xlsx'
+import dayjs from 'dayjs'
 
 const showAddModal = ref(false)
 const showImportModal = ref(false)
+const showEditModal = ref(false)
 const addLoading = ref(false)
 const importLoading = ref(false)
+const editLoading = ref(false)
 const loading = ref(false)
 const currentUser = ref(null)
 const isEditing = ref(false)
@@ -275,6 +370,20 @@ const fileList = ref([])
 const importResult = ref(null)
 
 const addForm = reactive({
+  name: '',
+  studentId: '',
+  gender: 'male',
+  birthDate: '',
+  phone: '',
+  email: '',
+  major: '',
+  grade: '大三',
+  className: '',
+  admissionYear: new Date().getFullYear(),
+  teachingSubject: ''
+})
+
+const editForm = reactive({
   name: '',
   studentId: '',
   gender: 'male',
@@ -320,17 +429,32 @@ const getCurrentUser = async () => {
 }
 
 // 加载学生数据
-const loadStudents = async () => {
+const loadStudents = async (usePagination = true) => {
   loading.value = true
   try {
     if (!await getCurrentUser()) return
 
-    // 查询学生数据
-    const { data, error } = await supabase
+    // 构建查询
+    let query = supabase
       .from('students')
       .select('*')
       .order('created_at', { ascending: false })
+    
+    // 应用分页（除非指定不使用）
+    if (usePagination) {
+      const offset = (pagination.current - 1) * pagination.pageSize
+      query = query.range(offset, offset + pagination.pageSize - 1)
+      
+      // 获取总数
+      const { count: totalCount } = await supabase
+        .from('students')
+        .select('id', { count: 'exact' })
+      
+      pagination.total = totalCount
+    }
 
+    const { data, error } = await query
+    
     if (error) throw error
     students.value = data || []
   } catch (error) {
@@ -342,9 +466,44 @@ const loadStudents = async () => {
 }
 
 // 组件挂载时加载数据
-onMounted(() => {
-  loadStudents()
+onMounted(async () => {
+  await loadStudents()
+  // 可以选择在加载数据后更新统计信息
+  
+  // 添加事件监听器，响应学生状态变化
+  window.addEventListener('studentStatusChanged', async () => {
+    console.log('收到学生状态变化事件，更新数据...')
+    await loadStudents()
+  })
 })
+
+// 组件卸载时移除事件监听器
+onUnmounted(() => {
+  window.removeEventListener('studentStatusChanged', async () => {
+    await loadStudents()
+  })
+})
+
+// 更新统计数据的函数
+const updateStats = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .select('status')
+    
+    if (error) throw error
+    
+    const total = data.length
+    const available = data.filter(s => s.status === 'available').length
+    const assigned = data.filter(s => s.status === 'assigned').length
+    const completionRate = total > 0 ? Math.round((assigned / total) * 100) : 0
+    
+    // 直接更新stats值，保持使用computed
+    // 这里stats仍是computed，但我们确保在数据变化时调用此函数更新显示
+  } catch (error) {
+    console.error('更新统计数据失败:', error)
+  }
+}
 
 // 统计数据
 const stats = computed(() => {
@@ -414,10 +573,20 @@ const columns = [
 const pagination = {
   current: 1,
   pageSize: 10,
-  total: 3,
+  total: 0,
   showSizeChanger: true,
   showQuickJumper: true,
-  showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`
+  showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+  onChange: async (page, pageSize) => {
+    pagination.current = page
+    pagination.pageSize = pageSize
+    await loadStudents()
+  },
+  onShowSizeChange: async (current, pageSize) => {
+    pagination.pageSize = pageSize
+    pagination.current = 1
+    await loadStudents()
+  }
 }
 
 const getStatusText = (status) => {
@@ -427,6 +596,15 @@ const getStatusText = (status) => {
     completed: '已完成'
   }
   return texts[status] || '未知'
+}
+
+// 性别中文转换
+const getGenderText = (gender) => {
+  const texts = {
+    male: '男',
+    female: '女'
+  }
+  return texts[gender] || gender
 }
 
 // 格式化时间为东八区（CST）格式
@@ -453,10 +631,15 @@ const formatDateTimeToCST = (dateString) => {
   }
 }
 
+// 处理学生添加提交
 const handleAdd = async () => {
   addLoading.value = true
   try {
-    if (!await getCurrentUser()) return
+    // 验证用户权限
+    if (!await getCurrentUser()) {
+      closeModalAndReset()
+      return
+    }
 
     // 验证必填字段
     if (!addForm.name || !addForm.studentId || !addForm.major) {
@@ -479,121 +662,213 @@ const handleAdd = async () => {
     // 处理日期格式
     let birthDateValue = null
     if (addForm.birthDate) {
-      // 确保日期格式正确
-      const date = new Date(addForm.birthDate)
-      if (!isNaN(date.getTime())) {
-        birthDateValue = date.toISOString().split('T')[0] // 格式化为 YYYY-MM-DD
+      const date = dayjs(addForm.birthDate)
+      if (date.isValid()) {
+        birthDateValue = date.format('YYYY-MM-DD')
       }
     }
 
     // 添加学生到数据库
+    const newStudentData = {
+      student_id: addForm.studentId,
+      name: addForm.name,
+      gender: addForm.gender,
+      birth_date: birthDateValue,
+      phone: addForm.phone || null,
+      email: addForm.email || null,
+      major: addForm.major,
+      grade: addForm.grade,
+      class_name: addForm.className || null,
+      admission_year: addForm.admissionYear,
+      graduation_year: addForm.admissionYear + 4,
+      teaching_subject: addForm.teachingSubject || null,
+      created_by: currentUser.value.id,
+      status: 'available'
+    }
+
     const { data, error } = await supabase
       .from('students')
-      .insert([{
-        student_id: addForm.studentId,
-        name: addForm.name,
-        gender: addForm.gender,
-        birth_date: birthDateValue,
-        phone: addForm.phone || null,
-        email: addForm.email || null,
-        major: addForm.major,
-        grade: addForm.grade,
-        class_name: addForm.className || null,
-        admission_year: addForm.admissionYear,
-        graduation_year: addForm.admissionYear + 4,
-        teaching_subject: addForm.teachingSubject || null,
-        created_by: currentUser.value.id
-      }])
+      .insert([newStudentData])
       .select()
 
     if (error) throw error
 
-    // 刷新数据
+    // 重新加载数据以显示新添加的学生
     await loadStudents()
     
     message.success('学生添加成功')
-    showAddModal.value = false
-    resetForm()
+    closeModalAndReset()
   } catch (error) {
     console.error('添加学生失败:', error)
     message.error('添加失败，请重试')
+    closeModalAndReset()
   } finally {
     addLoading.value = false
   }
 }
 
-const handleEdit = async () => {
-  addLoading.value = true
-  try {
-    if (!await getCurrentUser()) return
 
-    // 验证必填字段
-    if (!addForm.name || !addForm.studentId || !addForm.major) {
-      message.error('请填写必填字段')
+
+// 点击修改按钮
+const handleEditClick = (record) => {
+  try {
+    // 检查记录是否有效
+    if (!record || !record.id) {
+      console.error('无效的学生记录:', record)
+      message.error('无法修改该学生，记录无效')
+      return
+    }
+    
+    console.log('修改学生记录:', record.id)
+    
+    // 重置编辑表单
+    resetEditForm()
+    editingStudentId.value = record.id
+    
+    // 填充表单数据
+    editForm.name = record.name || ''
+    editForm.studentId = record.student_id || ''
+    editForm.gender = record.gender || 'male'
+    editForm.phone = record.phone || ''
+    editForm.email = record.email || ''
+    editForm.major = record.major || ''
+    editForm.grade = record.grade || '大三'
+    editForm.className = record.class_name || ''
+    editForm.admissionYear = record.admission_year || new Date().getFullYear()
+    editForm.teachingSubject = record.teaching_subject || ''
+    
+    // 处理日期
+    if (record.birth_date) {
+      try {
+        const date = dayjs(record.birth_date)
+        if (date.isValid()) {
+          editForm.birthDate = date
+        } else {
+          editForm.birthDate = null
+        }
+      } catch (e) {
+        console.warn('日期解析错误:', e)
+        editForm.birthDate = null
+      }
+    } else {
+      editForm.birthDate = null
+    }
+    
+    // 打开修改模态框
+    showEditModal.value = true
+    console.log('修改模态框已打开')
+  } catch (error) {
+    console.error('修改学生时出错:', error)
+    message.error('加载学生数据失败')
+  }
+}
+
+// 处理修改提交
+const handleEditSubmit = async () => {
+  editLoading.value = true
+  try {
+    // 验证用户权限
+    const user = await getCurrentUser()
+    if (!user) {
+      message.error('用户未登录')
+      closeEditModal()
       return
     }
 
-    // 检查学号是否与其他学生重复（排除当前编辑的学生）
-    const { data: existingStudent } = await supabase
-      .from('students')
-      .select('id')
-      .eq('student_id', addForm.studentId)
-      .neq('id', editingStudentId.value)
-      .single()
-
-    if (existingStudent) {
-      message.error('该学号已存在')
+    // 验证必填字段
+    if (!editForm.name.trim()) {
+      message.error('请输入学生姓名')
+      return
+    }
+    if (!editForm.major.trim()) {
+      message.error('请输入专业')
       return
     }
 
     // 处理日期格式
     let birthDateValue = null
-    if (addForm.birthDate) {
-      // 确保日期格式正确
-      const date = new Date(addForm.birthDate)
-      if (!isNaN(date.getTime())) {
-        birthDateValue = date.toISOString().split('T')[0] // 格式化为 YYYY-MM-DD
+    if (editForm.birthDate) {
+      const date = dayjs(editForm.birthDate)
+      if (date.isValid()) {
+        birthDateValue = date.format('YYYY-MM-DD')
       }
     }
 
-    // 更新学生信息
+    // 准备更新数据
+    const updateData = {
+      name: editForm.name.trim(),
+      gender: editForm.gender,
+      birth_date: birthDateValue,
+      phone: editForm.phone?.trim() || null,
+      email: editForm.email?.trim() || null,
+      major: editForm.major.trim(),
+      grade: editForm.grade,
+      class_name: editForm.className?.trim() || null,
+      admission_year: Number(editForm.admissionYear),
+      graduation_year: Number(editForm.admissionYear) + 4,
+      teaching_subject: editForm.teachingSubject?.trim() || null,
+      updated_at: new Date().toISOString()
+    }
+
+    // 执行数据库更新
     const { error } = await supabase
       .from('students')
-      .update({
-        student_id: addForm.studentId,
-        name: addForm.name,
-        gender: addForm.gender,
-        birth_date: birthDateValue,
-        phone: addForm.phone || null,
-        email: addForm.email || null,
-        major: addForm.major,
-        grade: addForm.grade,
-        class_name: addForm.className || null,
-        admission_year: addForm.admissionYear,
-        graduation_year: addForm.admissionYear + 4,
-        teaching_subject: addForm.teachingSubject || null,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', editingStudentId.value)
+      .select()
 
-    if (error) throw error
+    if (error) {
+      console.error('数据库更新错误:', error)
+      throw error
+    }
 
-    // 刷新数据
-    await loadStudents()
+    // 更新本地学生列表
+    const index = students.value.findIndex(s => s.id === editingStudentId.value)
+    if (index !== -1) {
+      students.value[index] = { ...students.value[index], ...updateData }
+      students.value = [...students.value] // 强制数组更新，触发UI重新渲染
+    }
     
-    message.success('学生信息更新成功')
-    showAddModal.value = false
-    resetForm()
+    message.success('学生信息修改成功')
     
-    // 重置编辑状态
-    isEditing.value = false
-    editingStudentId.value = null
+    // 关闭模态框
+    closeEditModal()
   } catch (error) {
-    console.error('编辑学生失败:', error)
-    message.error('编辑失败，请重试')
+    console.error('修改学生失败:', error)
+    message.error('修改失败，请重试')
   } finally {
-    addLoading.value = false
+    editLoading.value = false
   }
+}
+
+// 处理修改取消
+const handleEditCancel = () => {
+  message.info('已取消修改操作')
+  closeEditModal()
+}
+
+// 关闭修改模态框
+const closeEditModal = () => {
+  showEditModal.value = false
+  setTimeout(() => {
+    resetEditForm()
+    editingStudentId.value = null
+  }, 100)
+}
+
+// 重置修改表单
+const resetEditForm = () => {
+  editForm.name = ''
+  editForm.studentId = ''
+  editForm.gender = 'male'
+  editForm.birthDate = null
+  editForm.phone = ''
+  editForm.email = ''
+  editForm.major = ''
+  editForm.grade = '大三'
+  editForm.className = ''
+  editForm.admissionYear = new Date().getFullYear()
+  editForm.teachingSubject = ''
 }
 
 const refreshData = async () => {
@@ -601,64 +876,7 @@ const refreshData = async () => {
   message.success('数据已刷新')
 }
 
-const handleEditClick = (record) => {
-  console.log('编辑按钮被点击，学生信息:', record)
-  
-  // 检查记录是否有效
-  if (!record || !record.id) {
-    console.error('无效的学生记录:', record)
-    message.error('无法编辑该学生，记录无效')
-    return
-  }
-  
-  // 调用编辑函数
-  editStudent(record)
-}
 
-const editStudent = (record) => {
-  console.log('编辑按钮被点击，学生信息:', record)
-  
-  try {
-    // 直接设置编辑模式
-    isEditing.value = true
-    editingStudentId.value = record.id
-    
-    // 填充表单数据 - 确保字段映射正确
-    addForm.name = record.name || ''
-    addForm.studentId = record.student_id || ''
-    addForm.gender = record.gender || 'male'
-    
-    // 处理日期格式
-    if (record.birth_date) {
-      // 将数据库日期转换为前端可用的格式
-      const birthDate = new Date(record.birth_date)
-      if (!isNaN(birthDate.getTime())) {
-        addForm.birthDate = birthDate
-      } else {
-        addForm.birthDate = ''
-      }
-    } else {
-      addForm.birthDate = ''
-    }
-    
-    addForm.phone = record.phone || ''
-    addForm.email = record.email || ''
-    addForm.major = record.major || ''
-    addForm.grade = record.grade || '大三'
-    addForm.className = record.class_name || ''
-    addForm.admissionYear = record.admission_year || new Date().getFullYear()
-    addForm.teachingSubject = record.teaching_subject || ''
-    
-    // 打开模态框
-    showAddModal.value = true
-    
-    console.log('模态框状态设置为true，准备打开编辑框')
-    message.info(`正在编辑学生: ${record.name}`)
-  } catch (error) {
-    console.error('编辑按钮点击出错:', error)
-    message.error('编辑功能出现错误，请刷新页面重试')
-  }
-}
 
 const deleteStudent = async (id) => {
   try {
@@ -669,8 +887,12 @@ const deleteStudent = async (id) => {
 
     if (error) throw error
 
-    // 刷新数据
-    await loadStudents()
+    // 从本地列表中移除，避免重新加载全部数据
+    const index = students.value.findIndex(s => s.id === id)
+    if (index !== -1) {
+      students.value.splice(index, 1)
+      pagination.total-- // 更新总数
+    }
     message.success('删除成功')
   } catch (error) {
     console.error('删除学生失败:', error)
@@ -921,30 +1143,44 @@ const downloadTemplate = () => {
   message.success('模板下载成功')
 }
 
-// 重置表单
+// 关闭模态框并重置所有状态的通用函数
+const closeModalAndReset = () => {
+  console.log('关闭模态框并重置状态')
+  
+  // 先关闭模态框
+  showAddModal.value = false
+  
+  // 然后重置状态
+  setTimeout(() => {
+    resetForm()
+    console.log('状态重置完成')
+  }, 100)
+}
+
+// 处理模态框确认按钮
 const handleModalOk = () => {
-  if (isEditing.value) {
-    handleEdit()
-  } else {
-    handleAdd()
-  }
+  handleAdd()
 }
 
+// 处理模态框取消按钮
 const handleModalCancel = () => {
-  // 重置表单和编辑状态
-  resetForm()
-  isEditing.value = false
-  editingStudentId.value = null
+  message.info('已取消操作')
+  closeModalAndReset()
 }
 
+// 重置表单
 const resetForm = () => {
-  Object.keys(addForm).forEach(key => {
-    if (key !== 'grade' && key !== 'admissionYear') {
-      addForm[key] = ''
-    }
-  })
+  addForm.name = ''
+  addForm.studentId = ''
+  addForm.gender = 'male'
+  addForm.birthDate = ''
+  addForm.phone = ''
+  addForm.email = ''
+  addForm.major = ''
   addForm.grade = '大三'
+  addForm.className = ''
   addForm.admissionYear = new Date().getFullYear()
+  addForm.teachingSubject = ''
 }
 </script>
 

@@ -91,9 +91,10 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { supabase } from '../../lib/supabaseClient.js'
 
 const activeTab = ref('current')
 const showDetailModal = ref(false)
@@ -168,9 +169,74 @@ const viewHistory = (record) => {
   message.info(`查看历史记录: ${record.name}`)
 }
 
-const refreshTeachers = () => {
-  message.success('数据已刷新')
+const refreshTeachers = async () => {
+  try {
+    // 从数据库获取最新的教师（已分配学生）数据
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('organization')
+      .eq('id', (await supabase.auth.getUser()).data.user?.id)
+      .single()
+
+    if (!profile) {
+      message.error('未找到用户组织信息')
+      return
+    }
+
+    // 获取分配到当前学校的学生
+    const { data, error } = await supabase
+      .from('student_assignments')
+      .select(`
+        *, 
+        students(name, major, grade, contact)
+      `)
+      .eq('school_name', profile.organization)
+      .eq('status', 'active')
+
+    if (error) {
+      throw error
+    }
+
+    // 更新教师列表数据
+    if (data && data.length > 0) {
+      currentTeachers.value = data.map(assignment => ({
+        id: assignment.student_id,
+        name: assignment.students.name,
+        subject: assignment.teaching_subject,
+        grade: assignment.teaching_grade,
+        university: '合作大学', // 可从students表获取详细信息
+        startDate: assignment.start_date.split('T')[0],
+        endDate: '待定', // 可从assignment_period计算
+        performance: 0, // 初始表现分数
+        contact: assignment.students.contact || '暂无联系方式',
+        remarks: '新分配' // 初始备注
+      }))
+    }
+    
+    message.success('数据已刷新')
+  } catch (error) {
+    console.error('刷新教师数据失败:', error)
+    message.error('刷新数据失败，请稍后重试')
+  }
 }
+
+// 监听教学分配更新事件
+const handleTeachingAssignmentUpdated = (event) => {
+  console.log('接收到教学分配更新:', event.detail)
+  refreshTeachers()
+}
+
+// 组件挂载时添加事件监听器
+onMounted(() => {
+  window.addEventListener('teachingAssignmentUpdated', handleTeachingAssignmentUpdated)
+  // 页面加载时获取最新数据
+  refreshTeachers()
+})
+
+// 组件卸载时移除事件监听器
+onUnmounted(() => {
+  window.removeEventListener('teachingAssignmentUpdated', handleTeachingAssignmentUpdated)
+})
 </script>
 
 <style scoped>

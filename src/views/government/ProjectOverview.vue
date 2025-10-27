@@ -72,15 +72,72 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { DownloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { supabase } from '../../lib/supabaseClient.js'
 
 const stats = reactive({
   schools: 156,
   teachers: 289,
   completed: 45,
   coverage: 78.5
+})
+
+// 刷新统计数据和项目执行情况
+const refreshProjectData = async () => {
+  try {
+    // 获取最新的项目统计数据
+    // 统计参与学校数量
+    const { data: schoolsData } = await supabase
+      .from('teaching_demands')
+      .select('organization')
+      .neq('status', 'rejected')
+      .select('organization', { count: 'exact' })
+      .single()
+    
+    if (schoolsData) {
+      stats.schools = schoolsData.count || 0
+    }
+    
+    // 统计在岗教师（已分配学生）数量
+    const { data: studentsData } = await supabase
+      .from('student_assignments')
+      .select('*', { count: 'exact' })
+      .eq('status', 'active')
+      .single()
+    
+    if (studentsData) {
+      stats.teachers = studentsData.count || 0
+    }
+    
+    // 更新项目执行情况
+    // 这里应该从数据库获取实际的项目区域数据
+    // 为简化示例，这里只是刷新现有数据
+    
+    message.success('项目数据已刷新')
+  } catch (error) {
+    console.error('刷新项目数据失败:', error)
+    message.error('刷新数据失败，请稍后重试')
+  }
+}
+
+// 监听教学分配更新事件
+const handleTeachingAssignmentUpdated = (event) => {
+  console.log('政府端接收到教学分配更新:', event.detail)
+  refreshProjectData()
+}
+
+// 组件挂载时添加事件监听器
+onMounted(() => {
+  window.addEventListener('teachingAssignmentUpdated', handleTeachingAssignmentUpdated)
+  // 页面加载时获取最新数据
+  refreshProjectData()
+})
+
+// 组件卸载时移除事件监听器
+onUnmounted(() => {
+  window.removeEventListener('teachingAssignmentUpdated', handleTeachingAssignmentUpdated)
 })
 
 const projects = ref([
