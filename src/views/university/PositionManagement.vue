@@ -28,7 +28,8 @@
                   <a-button 
                     type="link" 
                     @click="openAssignModal(record)"
-                    :disabled="record.status !== 'pending'"
+                    :disabled="!canAssignStudent(record)"
+                    :class="{ 'disabled-button': !canAssignStudent(record) }"
                   >
                     分配学生
                   </a-button>
@@ -118,6 +119,7 @@ const currentPosition = ref(null)
 const positions = ref([])
 const availableStudents = ref([])
 const selectedStudents = ref([])
+const assignmentStats = ref({}) // 存储每个岗位的已分配学生数量
 
 const columns = [
   { title: '学校名称', dataIndex: 'schoolName', key: 'schoolName' },
@@ -134,6 +136,47 @@ const pagination = {
   current: 1,
   pageSize: 10,
   total: 0
+}
+
+// 获取岗位的已分配学生数量
+const fetchAssignmentStats = async (positionIds) => {
+  try {
+    // 使用新创建的position_student_assignments表查询已分配学生数量
+    const { data, error } = await supabase
+      .from('position_student_assignments')
+      .select('position_id')
+      .eq('status', 'active')
+      .in('position_id', positionIds)
+
+    if (error) {
+      console.error('获取分配统计失败:', error)
+      return {}
+    }
+
+    // 统计每个岗位的已分配学生数量
+    const stats = {}
+    data?.forEach(assignment => {
+      const positionId = assignment.position_id
+      stats[positionId] = (stats[positionId] || 0) + 1
+    })
+
+    return stats
+  } catch (error) {
+    console.error('获取分配统计失败:', error)
+    return {}
+  }
+}
+
+// 判断按钮是否可点击
+const canAssignStudent = (position) => {
+  // 条件一：岗位状态必须为"已审批"
+  if (position.status !== 'approved') {
+    return false
+  }
+
+  // 条件二：已分配学生数量 < 需求人数
+  const assignedCount = assignmentStats.value[position.id] || 0
+  return assignedCount < position.demand
 }
 
 // 获取审批通过和已分配的岗位数据
@@ -203,37 +246,21 @@ const fetchApprovedPositions = async () => {
       }
     } else {
       // 获取当前查询到的岗位ID列表
-        const demandIds = demandsData.map(item => item.id)
-        
-        // 只查询与这些岗位相关的学生分配记录
-        const { data: assignmentsData, error: assignmentsError } = await supabase
-          .from('student_assignments')
-          .select('teaching_demand_id')
-          .eq('status', 'active')
-          .in('teaching_demand_id', demandIds)
+      const demandIds = demandsData.map(item => item.id)
+      
+      // 获取已分配学生数量统计
+      assignmentStats.value = await fetchAssignmentStats(demandIds)
+      
+      console.log('岗位分配统计:', assignmentStats.value)
 
-      if (assignmentsError) {
-        console.error('获取学生分配记录失败:', assignmentsError)
-      }
-
-      // 创建已分配岗位ID的集合
-      const assignedPositionIds = new Set()
-      if (assignmentsData && assignmentsData.length > 0) {
-        assignmentsData.forEach(assignment => {
-          if (assignment.teaching_demand_id) {
-            assignedPositionIds.add(assignment.teaching_demand_id)
-          }
-        })
-      }
-
-      console.log('已分配的岗位ID集合:', Array.from(assignedPositionIds))
-
-      // 转换数据格式，根据是否有学生分配记录确定状态
+      // 转换数据格式
       positions.value = demandsData.map(item => {
-        // 确定状态：如果数据库中是assigned状态，或者有对应的分配记录，则状态为assigned
+        const assignedCount = assignmentStats.value[item.id] || 0
+        
+        // 根据已分配数量确定状态
         let displayStatus = item.status
-        if (item.status === 'approved' && assignedPositionIds.has(item.id)) {
-          displayStatus = 'assigned'
+        if (item.status === 'approved' && assignedCount > 0) {
+          displayStatus = assignedCount >= item.demand_count ? 'assigned' : 'partially_assigned'
         }
         
         return {
@@ -244,7 +271,8 @@ const fetchApprovedPositions = async () => {
           demand: item.demand_count,
           duration: item.duration,
           applicationTime: formatDate(item.created_at),
-          status: displayStatus
+          status: displayStatus,
+          assignedCount: assignedCount // 添加已分配数量字段
         }
       })
     }
@@ -304,7 +332,8 @@ const getStatusText = (status) => {
     pending: '待分配',
     assigned: '已分配',
     completed: '已完成',
-    approved: '已审批'
+    approved: '已审批',
+    partially_assigned: '部分分配'
   }
   return texts[status] || '未知'
 }
@@ -369,13 +398,24 @@ const handleAssign = async () => {
   }
 
   // 检查是否超过需求人数
-  if (selectedStudents.value.length > currentPosition.value.demand) {
-    message.warning(`选择的学生数量(${selectedStudents.value.length})超过了需求人数(${currentPosition.value.demand})`)
+  const currentAssignedCount = assignmentStats.value[currentPosition.value.id] || 0
+  const remainingSlots = currentPosition.value.demand - currentAssignedCount
+  
+  if (selectedStudents.value.length > remainingSlots) {
+    message.warning(`选择的学生数量(${selectedStudents.value.length})超过了剩余名额(${remainingSlots})`)
     return
   }
 
   assignLoading.value = true
   try {
+    // 获取当前用户ID
+    const { data: userData } = await supabase.auth.getUser()
+    const currentUserId = userData.user?.id
+    
+    if (!currentUserId) {
+      throw new Error('用户未登录')
+    }
+    
     // 开启事务，确保数据一致性
     await supabase.rpc('start_transaction')
     
@@ -406,19 +446,43 @@ const handleAssign = async () => {
           assignment_period: currentPosition.value.duration,
           start_date: new Date(), // 使用当前日期作为开始日期
           status: 'active',
-          teaching_demand_id: currentPosition.value.id, // 添加关联到教学需求ID
-          assigned_by: await supabase.auth.getUser().then(res => res.data.user?.id)
+          teaching_demand_id: currentPosition.value.id,
+          assigned_by: currentUserId
         })
       
       if (assignmentError) {
         throw assignmentError
       }
+      
+      // 创建岗位与学生分配关联记录到position_student_assignments表
+      const { error: positionAssignmentError } = await supabase
+        .from('position_student_assignments')
+        .insert({
+          position_id: currentPosition.value.id,
+          student_id: student.id,
+          assigned_by: currentUserId,
+          status: 'active'
+        })
+      
+      if (positionAssignmentError) {
+        throw positionAssignmentError
+      }
+    }
+    
+    // 检查是否已分配满额，如果满额则更新岗位状态
+    const newAssignedCount = currentAssignedCount + selectedStudents.value.length
+    let newStatus = currentPosition.value.status
+    
+    if (newAssignedCount >= currentPosition.value.demand) {
+      newStatus = 'assigned'
+    } else if (newAssignedCount > 0) {
+      newStatus = 'partially_assigned'
     }
     
     // 更新teaching_demands表中的岗位状态
     const { error: demandError } = await supabase
       .from('teaching_demands')
-      .update({ status: 'assigned' })
+      .update({ status: newStatus })
       .eq('id', currentPosition.value.id)
     
     if (demandError) {
@@ -428,8 +492,12 @@ const handleAssign = async () => {
     // 更新本地状态
     const positionIndex = positions.value.findIndex(p => p.id === currentPosition.value.id)
     if (positionIndex !== -1) {
-      positions.value[positionIndex].status = 'assigned'
+      positions.value[positionIndex].status = newStatus
+      positions.value[positionIndex].assignedCount = newAssignedCount
     }
+    
+    // 更新分配统计
+    assignmentStats.value[currentPosition.value.id] = newAssignedCount
     
     // 提交事务
     await supabase.rpc('commit_transaction')
@@ -441,7 +509,6 @@ const handleAssign = async () => {
     selectedStudents.value = []
     
     // 通知其他身份页面更新数据
-    // 使用更明确的事件名称，确保其他组件能正确响应
     window.dispatchEvent(new CustomEvent('teachingAssignmentUpdated', {
       detail: {
         positionId: currentPosition.value.id,
@@ -602,5 +669,44 @@ onMounted(() => {
 <style scoped>
 .position-management {
   padding: 20px;
+}
+
+/* 禁用按钮样式 */
+.disabled-button {
+  color: #bfbfbf !important;
+  cursor: not-allowed !important;
+  background-color: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+}
+
+.disabled-button:hover {
+  color: #bfbfbf !important;
+  background-color: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+}
+
+/* 状态标签样式 */
+.status-tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.status-approved {
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #52c41a;
+}
+
+.status-partially_assigned {
+  background-color: #e6f7ff;
+  border: 1px solid #91d5ff;
+  color: #1890ff;
+}
+
+.status-assigned {
+  background-color: #f0f5ff;
+  border: 1px solid #adc6ff;
+  color: #2f54eb;
 }
 </style>
