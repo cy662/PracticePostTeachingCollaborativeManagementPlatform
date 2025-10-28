@@ -416,9 +416,6 @@ const handleAssign = async () => {
       throw new Error('用户未登录')
     }
     
-    // 开启事务，确保数据一致性
-    await supabase.rpc('start_transaction')
-    
     // 更新学生状态并创建分配记录
     for (const student of selectedStudents.value) {
       // 更新数据库中的学生状态
@@ -446,7 +443,6 @@ const handleAssign = async () => {
           assignment_period: currentPosition.value.duration,
           start_date: new Date(), // 使用当前日期作为开始日期
           status: 'active',
-          teaching_demand_id: currentPosition.value.id,
           assigned_by: currentUserId
         })
       
@@ -499,9 +495,6 @@ const handleAssign = async () => {
     // 更新分配统计
     assignmentStats.value[currentPosition.value.id] = newAssignedCount
     
-    // 提交事务
-    await supabase.rpc('commit_transaction')
-    
     console.log('学生分配成功并记录关联关系:', selectedStudents.value, '到岗位:', currentPosition.value.id)
 
     message.success('分配成功')
@@ -523,12 +516,8 @@ const handleAssign = async () => {
     console.error('分配学生失败:', error)
     message.error('分配失败，请稍后重试')
     
-    // 回滚事务
-    try {
-      await supabase.rpc('rollback_transaction')
-    } catch (rollbackError) {
-      console.error('事务回滚失败:', rollbackError)
-    }
+    // 回滚操作（由于Supabase不支持传统事务，这里记录错误信息）
+    console.error('分配操作失败，需要手动回滚相关数据')
     
     // 关闭模态框
     showAssignModal.value = false
