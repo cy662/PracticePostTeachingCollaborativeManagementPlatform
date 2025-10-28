@@ -138,14 +138,17 @@ const handleLogout = async () => {
       localStorage.removeItem('demo_role')
       localStorage.removeItem('demo_user')
       message.success('已退出演示模式')
-      // 使用 window.location 确保完全刷新页面
-      window.location.href = '/login'
+      // 使用 router.replace 确保路由正确跳转
+      router.replace('/login')
     } else {
-      // 真实模式：调用 Supabase 登出
+      // 真实模式：清除所有本地存储的用户信息
+      localStorage.removeItem('current_user')
+      localStorage.removeItem('user_role')
+      // 调用 Supabase 登出
       await supabase.auth.signOut()
       message.success('退出成功')
-      // 使用 window.location 确保完全刷新页面
-      window.location.href = '/login'
+      // 使用 router.replace 确保路由正确跳转
+      router.replace('/login')
     }
   } catch (error) {
     message.error('退出失败')

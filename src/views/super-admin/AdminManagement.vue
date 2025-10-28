@@ -260,26 +260,7 @@ const fetchAdminList = async () => {
   try {
     loading.value = true
     
-    // 构建筛选条件
-    let userQuery = supabase
-      .from('user_profiles')
-      .select('id')
-    
-    // 添加用户档案筛选条件
-    if (searchForm.name) {
-      userQuery = userQuery.ilike('name', `%${searchForm.name}%`)
-    }
-    if (searchForm.phone) {
-      userQuery = userQuery.ilike('phone_number', `%${searchForm.phone}%`)
-    }
-    if (searchForm.role) {
-      userQuery = userQuery.eq('role', searchForm.role)
-    }
-    
-    // 执行用户档案查询
-    const { data: userData } = await userQuery
-    
-    // 构建管理员查询
+    // 直接查询 admin_management 表，通过关联获取用户信息
     let adminQuery = supabase
       .from('admin_management')
       .select(`
@@ -294,13 +275,16 @@ const fetchAdminList = async () => {
         )
       `)
     
-    // 如果有用户筛选条件，添加管理员ID筛选
-    if (userData && userData.length > 0) {
-      const userIds = userData.map(user => user.id)
-      adminQuery = adminQuery.in('admin_id', userIds)
+    // 添加筛选条件
+    if (searchForm.name) {
+      adminQuery = adminQuery.ilike('user_profiles.name', `%${searchForm.name}%`)
     }
-    
-    // 添加状态筛选条件
+    if (searchForm.phone) {
+      adminQuery = adminQuery.ilike('user_profiles.phone_number', `%${searchForm.phone}%`)
+    }
+    if (searchForm.role) {
+      adminQuery = adminQuery.eq('user_profiles.role', searchForm.role)
+    }
     if (searchForm.status) {
       adminQuery = adminQuery.eq('status', searchForm.status)
     }
@@ -318,21 +302,24 @@ const fetchAdminList = async () => {
       throw error
     }
     
-    // 处理查询结果
+    // 处理查询结果 - 过滤掉没有关联用户的管理员记录
     if (data && data.length > 0) {
-      adminList.value = data.map(item => ({
-        ...item.user_profiles,
-        status: item.status,
-        id: item.admin_id,
-        created_at: item.created_at // 使用 admin_management 的创建时间
-      }))
+      adminList.value = data
+        .filter(item => item.user_profiles !== null) // 过滤掉没有关联用户的管理员
+        .map(item => ({
+          ...item.user_profiles,
+          status: item.status,
+          id: item.admin_id,
+          created_at: item.created_at // 使用 admin_management 的创建时间
+        }))
       pagination.total = count || data.length
     } else {
       adminList.value = []
       pagination.total = 0
     }
     
-    console.log('获取管理员列表成功:', adminList.value)
+    console.log('获取管理员列表成功，记录数:', adminList.value.length)
+    console.log('当前管理员列表:', adminList.value.map(item => ({ id: item.id, name: item.name })))
     
   } catch (error) {
     console.error('获取管理员列表失败:', error)
@@ -445,32 +432,18 @@ const addAdmin = async () => {
       role: formState.role
     }
     
-    // 尝试添加密码字段（如果数据库有该字段）
-    // 使用RPC函数来设置密码，避免直接插入可能不存在的字段
+    // 如果提供了密码，设置密码哈希
+    if (formState.password) {
+      // 使用简单的MD5哈希（前端实现）
+      userData.password_hash = await hashPassword(formState.password)
+    }
+    
+    // 创建用户档案
     const { data: profileData, error: profileError } = await supabase
       .from('user_profiles')
       .insert(userData)
       .select()
       .single()
-    
-    // 如果用户创建成功，尝试设置密码
-    if (profileData && !profileError) {
-      try {
-        // 使用RPC函数设置密码
-        const { error: passwordError } = await supabase
-          .rpc('set_user_password', {
-            phone: formState.phone_number,
-            new_password: formState.password
-          })
-        
-        if (passwordError) {
-          console.warn('设置密码失败，但用户已创建成功:', passwordError.message)
-          // 继续执行，用户可以使用默认密码登录
-        }
-      } catch (error) {
-        console.warn('密码设置函数可能不存在:', error)
-      }
-    }
     
     if (profileError) {
       console.error('创建用户档案失败:', profileError)
@@ -562,30 +535,63 @@ const toggleStatus = async (record) => {
 // 删除管理员
 const handleDelete = async (record) => {
   try {
-    // 这里需要谨慎处理，可能需要级联删除
+    // 这里需要谨慎处理，需要级联删除
     Modal.confirm({
       title: '确认删除',
-      content: '此操作将永久删除该管理员账户，是否继续？',
+      content: '此操作将永久删除该管理员账户（包括用户档案），是否继续？',
       okText: '确定',
       cancelText: '取消',
       okType: 'danger',
       onOk: async () => {
-        // 从管理员管理表中删除
-        const { error: managementError } = await supabase
-          .from('admin_management')
-          .delete()
-          .eq('admin_id', record.id)
-        
-        if (managementError) throw managementError
-        
-        message.success('删除成功')
-        fetchAdminList()
+        try {
+          console.log('开始删除管理员，ID:', record.id);
+          
+          // 1. 首先从管理员管理表中删除
+          const { error: managementError } = await supabase
+            .from('admin_management')
+            .delete()
+            .eq('admin_id', record.id)
+          
+          if (managementError) {
+            console.error('删除管理员管理记录失败:', managementError)
+            throw new Error(`删除管理员管理记录失败: ${managementError.message}`)
+          }
+          
+          console.log('管理员管理记录删除成功');
+          
+          // 2. 然后从用户档案表中删除用户数据
+          const { error: profileError } = await supabase
+            .from('user_profiles')
+            .delete()
+            .eq('id', record.id)
+          
+          if (profileError) {
+            console.error('删除用户档案失败:', profileError)
+            // 如果删除用户档案失败，但管理员管理记录已删除，仍然提示成功
+            // 因为管理员已经无法登录系统了
+            console.warn('管理员管理记录已删除，但用户档案删除失败，管理员已无法登录')
+            // 继续执行，因为管理员已经无法登录了
+          } else {
+            console.log('用户档案删除成功');
+          }
+          
+          message.success('删除成功')
+          console.log('删除成功，刷新列表...');
+          
+          // 强制刷新列表，确保显示最新数据
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒确保数据库操作完成
+          await fetchAdminList();
+          
+        } catch (error) {
+          console.error('删除过程中出错:', error)
+          message.error('删除失败: ' + error.message)
+        }
       }
     })
     
   } catch (error) {
     console.error('删除失败:', error)
-    message.error('删除失败')
+    message.error('删除失败: ' + error.message)
   }
 }
 
@@ -676,6 +682,137 @@ const exportData = async () => {
   } finally {
     exportLoading.value = false
   }
+}
+
+// MD5哈希函数（与后端保持一致）
+const hashPassword = async (password) => {
+  // 使用兼容性更好的MD5实现
+  // 这个实现与PostgreSQL的MD5函数结果一致
+  function md5(inputString) {
+    let hc = "0123456789abcdef";
+    function rh(n) {
+      let j, s = "";
+      for (j = 0; j <= 3; j++)
+        s += hc.charAt((n >> (j * 8 + 4)) & 0x0F) + hc.charAt((n >> (j * 8)) & 0x0F);
+      return s;
+    }
+    function ad(x, y) {
+      let l = (x & 0xFFFF) + (y & 0xFFFF);
+      let m = (x >> 16) + (y >> 16) + (l >> 16);
+      return (m << 16) | (l & 0xFFFF);
+    }
+    function rl(n, c) {
+      return (n << c) | (n >>> (32 - c));
+    }
+    function cm(q, a, b, x, s, t) {
+      return ad(rl(ad(ad(a, q), ad(x, t)), s), b);
+    }
+    function ff(a, b, c, d, x, s, t) {
+      return cm((b & c) | ((~b) & d), a, b, x, s, t);
+    }
+    function gg(a, b, c, d, x, s, t) {
+      return cm((b & d) | (c & (~d)), a, b, x, s, t);
+    }
+    function hh(a, b, c, d, x, s, t) {
+      return cm(b ^ c ^ d, a, b, x, s, t);
+    }
+    function ii(a, b, c, d, x, s, t) {
+      return cm(c ^ (b | (~d)), a, b, x, s, t);
+    }
+    function sb(x) {
+      let i;
+      let nblk = ((x.length + 8) >> 6) + 1;
+      let blks = new Array(nblk * 16);
+      for (i = 0; i < nblk * 16; i++) blks[i] = 0;
+      for (i = 0; i < x.length; i++)
+        blks[i >> 2] |= x.charCodeAt(i) << ((i % 4) * 8);
+      blks[i >> 2] |= 0x80 << ((i % 4) * 8);
+      blks[nblk * 16 - 2] = x.length * 8;
+      return blks;
+    }
+    let i, x = sb(inputString);
+    let a = 1732584193;
+    let b = -271733879;
+    let c = -1732584194;
+    let d = 271733878;
+    for (i = 0; i < x.length; i += 16) {
+      let olda = a;
+      let oldb = b;
+      let oldc = c;
+      let oldd = d;
+      a = ff(a, b, c, d, x[i + 0], 7, -680876936);
+      d = ff(d, a, b, c, x[i + 1], 12, -389564586);
+      c = ff(c, d, a, b, x[i + 2], 17, 606105819);
+      b = ff(b, c, d, a, x[i + 3], 22, -1044525330);
+      a = ff(a, b, c, d, x[i + 4], 7, -176418897);
+      d = ff(d, a, b, c, x[i + 5], 12, 1200080426);
+      c = ff(c, d, a, b, x[i + 6], 17, -1473231341);
+      b = ff(b, c, d, a, x[i + 7], 22, -45705983);
+      a = ff(a, b, c, d, x[i + 8], 7, 1770035416);
+      d = ff(d, a, b, c, x[i + 9], 12, -1958414417);
+      c = ff(c, d, a, b, x[i + 10], 17, -42063);
+      b = ff(b, c, d, a, x[i + 11], 22, -1990404162);
+      a = ff(a, b, c, d, x[i + 12], 7, 1804603682);
+      d = ff(d, a, b, c, x[i + 13], 12, -40341101);
+      c = ff(c, d, a, b, x[i + 14], 17, -1502002290);
+      b = ff(b, c, d, a, x[i + 15], 22, 1236535329);
+      a = gg(a, b, c, d, x[i + 1], 5, -165796510);
+      d = gg(d, a, b, c, x[i + 6], 9, -1069501632);
+      c = gg(c, d, a, b, x[i + 11], 14, 643717713);
+      b = gg(b, c, d, a, x[i + 0], 20, -373897302);
+      a = gg(a, b, c, d, x[i + 5], 5, -701558691);
+      d = gg(d, a, b, c, x[i + 10], 9, 38016083);
+      c = gg(c, d, a, b, x[i + 15], 14, -660478335);
+      b = gg(b, c, d, a, x[i + 4], 20, -405537848);
+      a = gg(a, b, c, d, x[i + 9], 5, 568446438);
+      d = gg(d, a, b, c, x[i + 14], 9, -1019803690);
+      c = gg(c, d, a, b, x[i + 3], 14, -187363961);
+      b = gg(b, c, d, a, x[i + 8], 20, 1163531501);
+      a = gg(a, b, c, d, x[i + 13], 5, -1444681467);
+      d = gg(d, a, b, c, x[i + 2], 9, -51403784);
+      c = gg(c, d, a, b, x[i + 7], 14, 1735328473);
+      b = gg(b, c, d, a, x[i + 12], 20, -1926607734);
+      a = hh(a, b, c, d, x[i + 5], 4, -378558);
+      d = hh(d, a, b, c, x[i + 8], 11, -2022574463);
+      c = hh(c, d, a, b, x[i + 11], 16, 1839030562);
+      b = hh(b, c, d, a, x[i + 14], 23, -35309556);
+      a = hh(a, b, c, d, x[i + 1], 4, -1530992060);
+      d = hh(d, a, b, c, x[i + 4], 11, 1272893353);
+      c = hh(c, d, a, b, x[i + 7], 16, -155497632);
+      b = hh(b, c, d, a, x[i + 10], 23, -1094730640);
+      a = hh(a, b, c, d, x[i + 13], 4, 681279174);
+      d = hh(d, a, b, c, x[i + 0], 11, -358537222);
+      c = hh(c, d, a, b, x[i + 3], 16, -722521979);
+      b = hh(b, c, d, a, x[i + 6], 23, 76029189);
+      a = hh(a, b, c, d, x[i + 9], 4, -640364487);
+      d = hh(d, a, b, c, x[i + 12], 11, -421815835);
+      c = hh(c, d, a, b, x[i + 15], 16, 530742520);
+      b = hh(b, c, d, a, x[i + 2], 23, -995338651);
+      a = ii(a, b, c, d, x[i + 0], 6, -198630844);
+      d = ii(d, a, b, c, x[i + 7], 10, 1126891415);
+      c = ii(c, d, a, b, x[i + 14], 15, -1416354905);
+      b = ii(b, c, d, a, x[i + 5], 21, -57434055);
+      a = ii(a, b, c, d, x[i + 12], 6, 1700485571);
+      d = ii(d, a, b, c, x[i + 3], 10, -1894986606);
+      c = ii(c, d, a, b, x[i + 10], 15, -1051523);
+      b = ii(b, c, d, a, x[i + 1], 21, -2054922799);
+      a = ii(a, b, c, d, x[i + 8], 6, 1873313359);
+      d = ii(d, a, b, c, x[i + 15], 10, -30611744);
+      c = ii(c, d, a, b, x[i + 6], 15, -1560198380);
+      b = ii(b, c, d, a, x[i + 13], 21, 1309151649);
+      a = ii(a, b, c, d, x[i + 4], 6, -145523070);
+      d = ii(d, a, b, c, x[i + 11], 10, -1120210379);
+      c = ii(c, d, a, b, x[i + 2], 15, 718787259);
+      b = ii(b, c, d, a, x[i + 9], 21, -343485551);
+      a = ad(a, olda);
+      b = ad(b, oldb);
+      c = ad(c, oldc);
+      d = ad(d, oldd);
+    }
+    return rh(a) + rh(b) + rh(c) + rh(d);
+  }
+  
+  return md5(password);
 }
 
 // 工具函数

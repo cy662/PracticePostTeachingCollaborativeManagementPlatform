@@ -44,23 +44,91 @@
         </a-form-item>
       </a-form>
     </div>
+
+    <!-- 强制修改密码弹窗 -->
+    <a-modal
+      v-model:visible="passwordModalVisible"
+      title="修改密码"
+      :mask-closable="false"
+      :closable="false"
+      :keyboard="false"
+      :footer="null"
+      width="400px"
+    >
+      <div class="password-change-modal">
+        <p style="margin-bottom: 20px; color: #ff4d4f;">
+          <exclamation-circle-outlined style="color: #ff4d4f; margin-right: 8px;" />
+          首次登录或密码已过期，请立即修改密码
+        </p>
+        
+        <a-form
+          ref="passwordFormRef"
+          :model="passwordForm"
+          :rules="passwordRules"
+          @finish="handlePasswordChange"
+        >
+          <a-form-item name="newPassword" label="新密码">
+            <a-input-password v-model:value="passwordForm.newPassword" placeholder="请输入新密码" />
+          </a-form-item>
+          
+          <a-form-item name="confirmPassword" label="确认密码">
+            <a-input-password v-model:value="passwordForm.confirmPassword" placeholder="请再次输入新密码" />
+          </a-form-item>
+          
+          <a-form-item>
+            <a-button type="primary" html-type="submit" :loading="passwordLoading" block>
+              确认修改
+            </a-button>
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MobileOutlined } from '@ant-design/icons-vue'
+import { MobileOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabaseClient.js'
 
 const router = useRouter()
 const loading = ref(false)
+const passwordModalVisible = ref(false)
+const passwordLoading = ref(false)
+const passwordFormRef = ref(null)
+
+// 存储当前登录用户信息，用于密码修改
+const currentUserInfo = ref(null)
 
 const formState = reactive({
     phone: '',
     password: ''
   })
+
+const passwordForm = reactive({
+    newPassword: '',
+    confirmPassword: ''
+  })
+
+const passwordRules = {
+  newPassword: [
+    { required: true, message: '请输入新密码' },
+    { min: 6, message: '密码长度不能少于6位' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请确认密码' },
+    {
+      validator: (_, value) => {
+        if (value !== passwordForm.newPassword) {
+          return Promise.reject(new Error('两次输入的密码不一致'))
+        }
+        return Promise.resolve()
+      }
+    }
+  ]
+}
 
 // 切换到真实数据库模式
 const switchToRealMode = () => {
@@ -240,6 +308,47 @@ const onFinish = async (values) => {
     message.error(error.message)
   } finally {
     loading.value = false
+  }
+}
+
+// 处理密码修改
+const handlePasswordChange = async () => {
+  try {
+    await passwordFormRef.value.validate()
+    passwordLoading.value = true
+    
+    // 使用RPC函数更新密码
+    const { error } = await supabase
+      .rpc('update_user_password', {
+        user_id: currentUserInfo.value.id,
+        new_password: passwordForm.newPassword
+      })
+    
+    if (error) {
+      throw new Error(`密码更新失败: ${error.message}`)
+    }
+    
+    message.success('密码修改成功')
+    
+    // 设置用户信息到本地存储
+    localStorage.setItem('current_user', JSON.stringify(currentUserInfo.value))
+    localStorage.setItem('user_role', currentUserInfo.value.role)
+    
+    // 关闭弹窗
+    passwordModalVisible.value = false
+    
+    // 根据角色跳转到对应页面
+    if (currentUserInfo.value.role === 'super_admin') {
+      router.push('/super-admin/dashboard')
+    } else {
+      router.push(`/${currentUserInfo.value.role}`)
+    }
+    
+  } catch (error) {
+    console.error('密码修改失败:', error)
+    message.error(error.message)
+  } finally {
+    passwordLoading.value = false
   }
 }
 </script>
