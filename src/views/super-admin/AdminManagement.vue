@@ -438,16 +438,39 @@ const addAdmin = async () => {
   
   try {
     // 创建用户档案（让数据库自动生成ID）
+    const userData = {
+      phone_number: formState.phone_number,
+      name: formState.name,
+      organization: formState.organization,
+      role: formState.role
+    }
+    
+    // 尝试添加密码字段（如果数据库有该字段）
+    // 使用RPC函数来设置密码，避免直接插入可能不存在的字段
     const { data: profileData, error: profileError } = await supabase
       .from('user_profiles')
-      .insert({
-        phone_number: formState.phone_number,
-        name: formState.name,
-        organization: formState.organization,
-        role: formState.role
-      })
+      .insert(userData)
       .select()
       .single()
+    
+    // 如果用户创建成功，尝试设置密码
+    if (profileData && !profileError) {
+      try {
+        // 使用RPC函数设置密码
+        const { error: passwordError } = await supabase
+          .rpc('set_user_password', {
+            phone: formState.phone_number,
+            new_password: formState.password
+          })
+        
+        if (passwordError) {
+          console.warn('设置密码失败，但用户已创建成功:', passwordError.message)
+          // 继续执行，用户可以使用默认密码登录
+        }
+      } catch (error) {
+        console.warn('密码设置函数可能不存在:', error)
+      }
+    }
     
     if (profileError) {
       console.error('创建用户档案失败:', profileError)

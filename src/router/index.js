@@ -120,7 +120,11 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
   try {
-    const { data: { user } } = await supabase.auth.getUser()
+    // 检查本地存储的用户信息（新登录方式）
+    const currentUser = localStorage.getItem('current_user')
+    const userRole = localStorage.getItem('user_role')
+    
+    // 检查演示模式
     const demoMode = localStorage.getItem('demo_mode') === 'true'
     const demoRole = localStorage.getItem('demo_role')
     
@@ -146,7 +150,30 @@ router.beforeEach(async (to, from, next) => {
       return
     }
     
-    // 真实认证模式
+    // 新登录方式处理（基于本地存储）
+    if (currentUser && userRole) {
+      // 已登录但访问登录页
+      if (to.path === '/login') {
+        next(`/${userRole}`)
+      }
+      // 检查角色权限
+      else if (to.meta.role && to.meta.role !== userRole) {
+        // 角色不匹配，跳转到对应角色的首页
+        next(`/${userRole}`)
+      }
+      // 需要认证但已登录
+      else if (to.meta.requiresAuth) {
+        next()
+      }
+      else {
+        next()
+      }
+      return
+    }
+    
+    // 传统 Supabase 认证模式（备用）
+    const { data: { user } } = await supabase.auth.getUser()
+    
     // 需要认证但未登录
     if (to.meta.requiresAuth && !user) {
       next('/login')
@@ -185,12 +212,17 @@ router.beforeEach(async (to, from, next) => {
     }
   } catch (error) {
     console.error('路由守卫错误:', error)
-    // 如果 Supabase 连接失败，检查是否为演示模式
+    // 如果认证失败，检查是否为演示模式或本地存储登录
     const demoMode = localStorage.getItem('demo_mode') === 'true'
     const demoRole = localStorage.getItem('demo_role')
+    const currentUser = localStorage.getItem('current_user')
+    const userRole = localStorage.getItem('user_role')
     
     if (demoMode && to.path !== '/login') {
       // 演示模式下允许访问
+      next()
+    } else if (currentUser && userRole && to.path !== '/login') {
+      // 本地存储登录模式下允许访问
       next()
     } else if (to.path !== '/login') {
       next('/login')
