@@ -28,12 +28,7 @@
           </template>
           <span>项目总览</span>
         </a-menu-item>
-        <a-menu-item key="reports" @click="navigateTo('reports')">
-          <template #icon>
-            <FileTextOutlined />
-          </template>
-          <span>报告中心</span>
-        </a-menu-item>
+
       </a-menu>
     </a-layout-sider>
     

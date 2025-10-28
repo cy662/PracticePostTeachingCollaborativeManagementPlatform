@@ -80,11 +80,7 @@ const routes = [
         name: 'GovernmentOverview',
         component: () => import('../views/government/ProjectOverview.vue')
       },
-      {
-        path: 'reports',
-        name: 'GovernmentReports',
-        component: () => import('../views/government/ReportCenter.vue')
-      }
+
     ]
   },
   // 中小学校管理员路由

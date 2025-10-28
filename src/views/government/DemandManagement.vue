@@ -457,64 +457,71 @@ const handleTabChange = (key) => {
 }
 
 const approveDemand = async (demand) => {
-  try {
-    // 更新数据库中的需求状态 - 尝试两个可能的表名
-    let updateSuccess = false;
-    
-    // 尝试更新teaching_demands表
-    console.log('尝试更新teaching_demands表中的需求状态...');
-    const result1 = await supabase
-      .from('teaching_demands')
-      .update({
-        status: 'approved',
-        approved_at: new Date().toISOString()
-      })
-      .eq('id', demand.id)
+  // 显示确认框
+  Modal.confirm({
+    title: '确认审核通过',
+    content: `确定要通过「${demand.schoolName}」的「${demand.subject}」需求申请吗？`,
+    onOk: async () => {
+      try {
+        // 更新数据库中的需求状态 - 尝试两个可能的表名
+        let updateSuccess = false;
+        
+        // 尝试更新teaching_demands表
+        console.log('尝试更新teaching_demands表中的需求状态...');
+        const result1 = await supabase
+          .from('teaching_demands')
+          .update({
+            status: 'approved',
+            approved_at: new Date().toISOString()
+          })
+          .eq('id', demand.id)
 
-    if (!result1.error) {
-      console.log('成功更新teaching_demands表中的需求状态');
-      updateSuccess = true;
-    } else {
-      // 如果失败，尝试更新school_demands表
-      console.log('更新teaching_demands表失败，尝试更新school_demands表...');
-      console.error('错误详情:', result1.error);
-      
-      const result2 = await supabase
-        .from('school_demands')
-        .update({
-          status: 'approved',
-          approved_at: new Date().toISOString()
+        if (!result1.error) {
+          console.log('成功更新teaching_demands表中的需求状态');
+          updateSuccess = true;
+        } else {
+          // 如果失败，尝试更新school_demands表
+          console.log('更新teaching_demands表失败，尝试更新school_demands表...');
+          console.error('错误详情:', result1.error);
+          
+          const result2 = await supabase
+            .from('school_demands')
+            .update({
+              status: 'approved',
+              approved_at: new Date().toISOString()
+            })
+            .eq('id', demand.id)
+          
+          if (!result2.error) {
+            console.log('成功更新school_demands表中的需求状态');
+            updateSuccess = true;
+          }
+        }
+
+        if (!updateSuccess) {
+          console.error('审核通过失败');
+          message.error('审核通过失败，请稍后重试')
+          return
+        }
+
+        // 更新本地数据
+        approvedDemands.value.push({
+          ...demand,
+          approveTime: new Date().toISOString().split('T')[0]
         })
-        .eq('id', demand.id)
-      
-      if (!result2.error) {
-        console.log('成功更新school_demands表中的需求状态');
-        updateSuccess = true;
+        pendingDemands.value = pendingDemands.value.filter(d => d.id !== demand.id)
+        // 更新分页总数
+        updatePaginationTotal()
+        message.success({
+          content: '需求审核通过',
+          className: 'success-message'
+        })
+      } catch (error) {
+        console.error('审核通过时发生错误:', error)
+        message.error('系统错误，请稍后重试')
       }
     }
-
-    if (!updateSuccess) {
-      console.error('审核通过失败');
-      message.error('审核通过失败，请稍后重试')
-      return
-    }
-
-    // 更新本地数据
-    approvedDemands.value.push({
-      ...demand,
-      approveTime: new Date().toISOString().split('T')[0]
-    })
-    pendingDemands.value = pendingDemands.value.filter(d => d.id !== demand.id)
-    // 更新分页总数
-    updatePaginationTotal()
-    message.success({
-      content: '需求审核通过',
-      className: 'success-message'
-    })
-  } catch (error) {
-    console.error('审核通过时发生错误:', error)
-    message.error('系统错误，请稍后重试')
-  }
+  })
 }
 
 const openRejectModal = (demand) => {
