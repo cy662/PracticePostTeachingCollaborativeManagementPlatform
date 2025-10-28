@@ -129,9 +129,24 @@ const handleMenuClick = ({ key }) => {
 // 退出登录
 const handleLogout = async () => {
   try {
-    await supabase.auth.signOut()
-    message.success('退出成功')
-    router.push('/login')
+    // 检查是否为演示模式
+    const demoMode = localStorage.getItem('demo_mode') === 'true'
+    
+    if (demoMode) {
+      // 演示模式：清除演示数据
+      localStorage.removeItem('demo_mode')
+      localStorage.removeItem('demo_role')
+      localStorage.removeItem('demo_user')
+      message.success('已退出演示模式')
+      // 使用 window.location 确保完全刷新页面
+      window.location.href = '/login'
+    } else {
+      // 真实模式：调用 Supabase 登出
+      await supabase.auth.signOut()
+      message.success('退出成功')
+      // 使用 window.location 确保完全刷新页面
+      window.location.href = '/login'
+    }
   } catch (error) {
     message.error('退出失败')
   }

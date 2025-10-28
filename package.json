@@ -12,12 +12,9 @@
     "@supabase/supabase-js": "^2.76.0",
     "ant-design-vue": "^4.0.0",
     "axios": "^1.4.0",
-<<<<<<< HEAD
     "echarts": "^6.0.0",
     "pg": "^8.16.3",
-=======
     "dayjs": "^1.11.18",
->>>>>>> 7ca03f5385fe61b4e4c608e7114eacd6fec08953
     "pinia": "^2.1.3",
     "tslib": "^2.8.1",
     "vue": "^3.3.4",
