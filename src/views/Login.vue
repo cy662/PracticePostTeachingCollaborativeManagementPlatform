@@ -4,16 +4,17 @@
       <div class="login-header">
         <h1>顶岗支教UGE协同管理平台</h1>
         <p>大学-政府-中小学三方协同管理</p>
+        <p class="login-tip">演示账号：超级管理员 13800138000/admin123456</p>
+        <p class="login-tip" style="color: #1890ff; font-weight: 500;">
+          当前模式：演示模式（数据不保存）
+          <a-button type="link" @click="switchToRealMode" style="padding: 0; height: auto;">
+            切换到真实数据库模式
+          </a-button>
+        </p>
       </div>
-      
-      <a-tabs v-model:activeKey="activeTab" centered>
-        <a-tab-pane key="login" tab="登录"></a-tab-pane>
-        <a-tab-pane key="register" tab="注册"></a-tab-pane>
-      </a-tabs>
       
       <a-form
         :model="formState"
-        :name="activeTab"
         @finish="onFinish"
         class="form"
       >
@@ -36,38 +37,9 @@
           <a-input-password v-model:value="formState.password" placeholder="密码" size="large" />
         </a-form-item>
 
-        <a-form-item
-          v-if="activeTab === 'register'"
-          name="name"
-          :rules="[{ required: true, message: '请输入姓名' }]"
-        >
-          <a-input v-model:value="formState.name" placeholder="姓名" size="large" />
-        </a-form-item>
-
-        <a-form-item
-          v-if="activeTab === 'register'"
-          name="organization"
-          :rules="[{ required: true, message: '请输入单位名称' }]"
-        >
-          <a-input v-model:value="formState.organization" placeholder="单位/学校名称" size="large" />
-        </a-form-item>
-
-        <!-- 只在注册时显示角色选择 -->
-        <a-form-item
-          v-if="activeTab === 'register'"
-          name="role"
-          :rules="[{ required: true, message: '请选择角色' }]"
-        >
-          <a-select v-model:value="formState.role" placeholder="选择角色" size="large">
-            <a-select-option value="university">大学管理员</a-select-option>
-            <a-select-option value="government">政府管理员</a-select-option>
-            <a-select-option value="school">中小学校管理员</a-select-option>
-          </a-select>
-        </a-form-item>
-
         <a-form-item>
           <a-button type="primary" html-type="submit" size="large" :loading="loading" block>
-            {{ activeTab === 'login' ? '登录' : '注册' }}
+            登录
           </a-button>
         </a-form-item>
       </a-form>
@@ -84,21 +56,65 @@ import { supabase } from '../lib/supabaseClient.js'
 
 const router = useRouter()
 const loading = ref(false)
-const activeTab = ref('login')
 
 const formState = reactive({
     phone: '',
-    password: '',
-    role: '',
-    name: '',
-    organization: ''
+    password: ''
   })
+
+// 切换到真实数据库模式
+const switchToRealMode = () => {
+  localStorage.removeItem('demo_mode')
+  localStorage.removeItem('demo_role')
+  localStorage.removeItem('demo_user')
+  message.info('已切换到真实数据库模式，请重新登录')
+  // 刷新页面
+  window.location.reload()
+}
 
 const onFinish = async (values) => {
   loading.value = true
   try {
-    if (activeTab.value === 'login') {
-      // 登录逻辑改为使用密码验证，无需用户选择角色
+    // 演示模式：直接模拟登录
+    // 检查是否为超级管理员演示账号
+    if (formState.phone === '13800138000' && values.password === 'admin123456') {
+      // 超级管理员演示 - 设置演示模式标识
+      localStorage.setItem('demo_mode', 'true')
+      localStorage.setItem('demo_role', 'super_admin')
+      localStorage.setItem('demo_user', JSON.stringify({
+        phone: '13800138000',
+        name: '超级管理员',
+        role: 'super_admin'
+      }))
+      message.success('超级管理员登录成功（演示模式）')
+      router.push('/super-admin/dashboard')
+      return
+    }
+    
+    // 其他角色演示
+    const demoAccounts = {
+      '13800138001': { role: 'university', name: '大学管理员' },
+      '13800138002': { role: 'government', name: '政府管理员' },
+      '13800138003': { role: 'school', name: '学校管理员' }
+    }
+    
+    if (demoAccounts[formState.phone] && values.password === 'admin123456') {
+      const account = demoAccounts[formState.phone]
+      // 设置演示模式标识
+      localStorage.setItem('demo_mode', 'true')
+      localStorage.setItem('demo_role', account.role)
+      localStorage.setItem('demo_user', JSON.stringify({
+        phone: formState.phone,
+        name: account.name,
+        role: account.role
+      }))
+      message.success(`${account.name}登录成功（演示模式）`)
+      router.push(`/${account.role}`)
+      return
+    }
+    
+    // 真实Supabase认证（备用）
+    try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: `${formState.phone}@example.com`,
         password: values.password
@@ -113,39 +129,28 @@ const onFinish = async (values) => {
         .eq('phone_number', formState.phone)
         .single()
       
+      if (!profile) {
+        throw new Error('用户信息不存在，请联系超级管理员')
+      }
+      
       message.success('登录成功')
-      router.push(`/${profile.role}`)
-    } else if (activeTab.value === 'register') {
-      // 注册逻辑改为使用密码验证，角色仍由用户选择
-      const { data: { user }, error: authError } = await supabase.auth.signUp({
-        email: `${formState.phone}@example.com`,
-        password: values.password,
-        options: {
-          data: {
-            phone_number: formState.phone,
-          }
-        }
-      })
-
-      if (authError) throw authError
-
-      // 保存用户信息到user_profiles表
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .upsert({
-          id: user.id,
-          phone_number: formState.phone,
-          name: formState.name,
-          organization: formState.organization,
-          role: values.role
-        })
-
-      if (profileError) throw profileError
-
-      message.success('注册成功')
-      formState.password = '' // 清空密码
-      activeTab.value = 'login' // 切换到登录标签页
+      
+      // 根据角色跳转到对应页面
+      if (profile.role === 'super_admin') {
+        router.push('/super-admin/dashboard')
+      } else {
+        router.push(`/${profile.role}`)
+      }
+      
+    } catch (supabaseError) {
+      // Supabase认证失败，提示演示账号信息
+      throw new Error(`认证失败。演示账号：
+超级管理员：13800138000/123456
+大学管理员：13800138001/123456
+政府管理员：13800138002/123456
+学校管理员：13800138003/123456`)
     }
+    
   } catch (error) {
     message.error(error.message)
   } finally {
@@ -187,6 +192,14 @@ const onFinish = async (values) => {
 .login-header p {
   color: #666;
   font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.login-header .login-tip {
+  color: #ff4d4f;
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 8px;
 }
 
 .form {

@@ -18,6 +18,29 @@ const routes = [
     component: () => import('../views/Dashboard.vue'),
     meta: { requiresAuth: true }
   },
+  // 超级管理员路由
+  {
+    path: '/super-admin',
+    component: () => import('../layouts/SuperAdminLayout.vue'),
+    meta: { requiresAuth: true, role: 'super_admin' },
+    children: [
+      {
+        path: 'dashboard',
+        name: 'SuperAdminDashboard',
+        component: () => import('../views/super-admin/Dashboard.vue')
+      },
+      {
+        path: 'admin-management',
+        name: 'AdminManagement',
+        component: () => import('../views/super-admin/AdminManagement.vue')
+      },
+      {
+        path: 'statistics',
+        name: 'AdminStatistics',
+        component: () => import('../views/super-admin/Statistics.vue')
+      }
+    ]
+  },
   // 大学管理员路由
   {
     path: '/university',
@@ -98,7 +121,32 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   try {
     const { data: { user } } = await supabase.auth.getUser()
+    const demoMode = localStorage.getItem('demo_mode') === 'true'
+    const demoRole = localStorage.getItem('demo_role')
     
+    // 演示模式处理
+    if (demoMode) {
+      // 演示模式下访问需要认证的页面
+      if (to.meta.requiresAuth) {
+        // 检查角色权限
+        if (to.meta.role && to.meta.role !== demoRole) {
+          // 角色不匹配，跳转到对应角色的首页
+          next(`/${demoRole}`)
+        } else {
+          next()
+        }
+      }
+      // 演示模式下访问登录页，跳转到对应角色首页
+      else if (to.path === '/login') {
+        next(`/${demoRole}`)
+      }
+      else {
+        next()
+      }
+      return
+    }
+    
+    // 真实认证模式
     // 需要认证但未登录
     if (to.meta.requiresAuth && !user) {
       next('/login')
@@ -137,8 +185,14 @@ router.beforeEach(async (to, from, next) => {
     }
   } catch (error) {
     console.error('路由守卫错误:', error)
-    // 如果 Supabase 连接失败，直接跳转到登录页
-    if (to.path !== '/login') {
+    // 如果 Supabase 连接失败，检查是否为演示模式
+    const demoMode = localStorage.getItem('demo_mode') === 'true'
+    const demoRole = localStorage.getItem('demo_role')
+    
+    if (demoMode && to.path !== '/login') {
+      // 演示模式下允许访问
+      next()
+    } else if (to.path !== '/login') {
       next('/login')
     } else {
       next()

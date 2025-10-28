@@ -7,7 +7,7 @@ project_id = "PracticePostTeachingCollaborativeManagem"
 [api]
 enabled = true
 # Port to use for the API URL.
-port = 54321
+port = 54322
 # Schemas to expose in your API. Tables, views and stored procedures in this schema will get API
 # endpoints. `public` and `graphql_public` schemas are included by default.
 schemas = ["public", "graphql_public"]
@@ -26,9 +26,9 @@ enabled = false
 
 [db]
 # Port to use for the local database URL.
-port = 54322
+port = 54333
 # Port used by db diff command to initialize the shadow database.
-shadow_port = 54320
+shadow_port = 54330
 # The database major version to use. This has to be the same as your remote database's. Run `SHOW
 # server_version;` on the remote database to check.
 major_version = 17
@@ -200,13 +200,13 @@ otp_expiry = 3600
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
-enable_signup = true
+enable_signup = false
 # If enabled, users need to confirm their phone number before signing in.
-enable_confirmations = true
+enable_confirmations = false
 # Template for sending OTP to users
-template = "您的验证码是 {{ .Code }}"
+template = "Your code is {{ .Code }}"
 # Controls the minimum amount of time that must pass before sending another sms otp.
-max_frequency = "60s"
+max_frequency = "5s"
 
 # Use pre-defined map of phone number to OTP for testing.
 # [auth.sms.test_otp]
@@ -331,7 +331,7 @@ deno_version = 2
 
 [analytics]
 enabled = true
-port = 54327
+port = 54328
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
 
