@@ -116,10 +116,6 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
   try {
-    // 检查本地存储的用户信息（新登录方式）
-    const currentUser = localStorage.getItem('current_user')
-    const userRole = localStorage.getItem('user_role')
-    
     // 检查演示模式
     const demoMode = localStorage.getItem('demo_mode') === 'true'
     const demoRole = localStorage.getItem('demo_role')
@@ -145,6 +141,10 @@ router.beforeEach(async (to, from, next) => {
       }
       return
     }
+    
+    // 检查本地存储的用户信息（新登录方式）
+    const currentUser = localStorage.getItem('current_user')
+    const userRole = localStorage.getItem('user_role')
     
     // 新登录方式处理（基于本地存储）
     if (currentUser && userRole) {
@@ -202,6 +202,10 @@ router.beforeEach(async (to, from, next) => {
       } else {
         next('/login')
       }
+    }
+    // 访问登录页面且未登录，直接允许访问
+    else if (to.path === '/login') {
+      next()
     }
     else {
       next()

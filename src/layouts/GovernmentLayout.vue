@@ -95,9 +95,25 @@ const navigateTo = (page) => {
 }
 
 const logout = () => {
-  localStorage.clear()
-  message.success('已退出登录')
-  router.push('/login')
+  // 检查是否为演示模式
+  const demoMode = localStorage.getItem('demo_mode') === 'true'
+  
+  if (demoMode) {
+    // 演示模式：清除演示数据
+    localStorage.removeItem('demo_mode')
+    localStorage.removeItem('demo_role')
+    localStorage.removeItem('demo_user')
+    message.success('已退出演示模式')
+    // 使用 router.replace 确保路由正确跳转
+    router.replace('/login')
+  } else {
+    // 真实模式：清除用户相关的本地存储
+    localStorage.removeItem('current_user')
+    localStorage.removeItem('user_role')
+    message.success('已退出登录')
+    // 使用 router.replace 确保路由正确跳转
+    router.replace('/login')
+  }
 }
 </script>
 
