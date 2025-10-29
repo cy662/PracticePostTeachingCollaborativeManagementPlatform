@@ -113,6 +113,14 @@ const router = createRouter({
   routes
 })
 
+// 定义角色默认路由映射
+const roleDefaultRoutes = {
+  'super_admin': '/super-admin/dashboard',
+  'university': '/university/students',
+  'government': '/government/demands',
+  'school': '/school/demand-application'
+}
+
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
   try {
@@ -127,14 +135,14 @@ router.beforeEach(async (to, from, next) => {
         // 检查角色权限
         if (to.meta.role && to.meta.role !== demoRole) {
           // 角色不匹配，跳转到对应角色的首页
-          next(`/${demoRole}`)
+          next(roleDefaultRoutes[demoRole] || `/${demoRole}`)
         } else {
           next()
         }
       }
       // 演示模式下访问登录页，跳转到对应角色首页
       else if (to.path === '/login') {
-        next(`/${demoRole}`)
+        next(roleDefaultRoutes[demoRole] || `/${demoRole}`)
       }
       else {
         next()
@@ -150,12 +158,12 @@ router.beforeEach(async (to, from, next) => {
     if (currentUser && userRole) {
       // 已登录但访问登录页
       if (to.path === '/login') {
-        next(`/${userRole}`)
+        next(roleDefaultRoutes[userRole] || `/${userRole}`)
       }
       // 检查角色权限
       else if (to.meta.role && to.meta.role !== userRole) {
         // 角色不匹配，跳转到对应角色的首页
-        next(`/${userRole}`)
+        next(roleDefaultRoutes[userRole] || `/${userRole}`)
       }
       // 需要认证但已登录
       else if (to.meta.requiresAuth) {
@@ -184,7 +192,7 @@ router.beforeEach(async (to, from, next) => {
         .single()
         
       if (profile) {
-        next(`/${profile.role}`)
+        next(roleDefaultRoutes[profile.role] || `/${profile.role}`)
       } else {
         next('/login')
       }
@@ -212,6 +220,7 @@ router.beforeEach(async (to, from, next) => {
     }
   } catch (error) {
     console.error('路由守卫错误:', error)
+    
     // 如果认证失败，检查是否为演示模式或本地存储登录
     const demoMode = localStorage.getItem('demo_mode') === 'true'
     const demoRole = localStorage.getItem('demo_role')
@@ -231,5 +240,6 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 })
+
 
 export default router

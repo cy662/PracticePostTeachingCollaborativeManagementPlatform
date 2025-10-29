@@ -179,9 +179,9 @@ const onFinish = async (values) => {
       
       // 其他角色演示
       const demoAccounts = {
-        '13800138001': { role: 'university', name: '大学管理员' },
-        '13800138002': { role: 'government', name: '政府管理员' },
-        '13800138003': { role: 'school', name: '学校管理员' }
+        '13800138001': { role: 'university', name: '大学管理员', defaultRoute: '/university/students' },
+        '13800138002': { role: 'government', name: '政府管理员', defaultRoute: '/government/demands' },
+        '13800138003': { role: 'school', name: '学校管理员', defaultRoute: '/school/demand-application' }
       }
       
       if (demoAccounts[formState.phone] && values.password === 'admin123456') {
@@ -200,7 +200,7 @@ const onFinish = async (values) => {
         // 更新Pinia store
         userStore.setUserInfo(userData)
         message.success(`${account.name}登录成功（演示模式）`)
-        router.push(`/${account.role}`)
+        router.push(account.defaultRoute)
         return
       }
     }
@@ -266,6 +266,12 @@ const onFinish = async (values) => {
       // 根据角色跳转到对应页面
       if (profile.role === 'super_admin') {
         router.push('/super-admin/dashboard')
+      } else if (profile.role === 'university') {
+        router.push('/university/students')
+      } else if (profile.role === 'government') {
+        router.push('/government/demands')
+      } else if (profile.role === 'school') {
+        router.push('/school/demand-application')
       } else {
         router.push(`/${profile.role}`)
       }
@@ -298,6 +304,12 @@ const onFinish = async (values) => {
         
         if (account.role === 'super_admin') {
           router.push('/super-admin/dashboard')
+        } else if (account.role === 'university') {
+          router.push('/university/students')
+        } else if (account.role === 'government') {
+          router.push('/government/demands')
+        } else if (account.role === 'school') {
+          router.push('/school/demand-application')
         } else {
           router.push(`/${account.role}`)
         }
@@ -345,6 +357,12 @@ const handlePasswordChange = async () => {
     // 根据角色跳转到对应页面
     if (currentUserInfo.value.role === 'super_admin') {
       router.push('/super-admin/dashboard')
+    } else if (currentUserInfo.value.role === 'university') {
+      router.push('/university/students')
+    } else if (currentUserInfo.value.role === 'government') {
+      router.push('/government/demands')
+    } else if (currentUserInfo.value.role === 'school') {
+      router.push('/school/demand-application')
     } else {
       router.push(`/${currentUserInfo.value.role}`)
     }
