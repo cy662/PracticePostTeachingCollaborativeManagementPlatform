@@ -52,7 +52,7 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'SimSun', '宋体', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
@@ -65,7 +65,7 @@ body {
 /* 标题样式 */
 h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
-  font-family: "楷体", "KaiTi", "STKaiti", serif;
+  font-family: 'SimSun', '宋体', serif;
   font-weight: 600;
   margin: 0;
 }

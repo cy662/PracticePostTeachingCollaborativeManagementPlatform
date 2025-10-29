@@ -3,14 +3,6 @@
     <div class="login-form">
       <div class="login-header">
         <h1>顶岗支教UGE协同管理平台</h1>
-        <p>大学-政府-中小学三方协同管理</p>
-        <p class="login-tip">演示账号：超级管理员 13800138000/admin123456</p>
-        <p class="login-tip" style="color: #1890ff; font-weight: 500;">
-          当前模式：演示模式（数据不保存）
-          <a-button type="link" @click="switchToRealMode" style="padding: 0; height: auto;">
-            切换到真实数据库模式
-          </a-button>
-        </p>
       </div>
       
       <a-form
@@ -132,15 +124,7 @@ const passwordRules = {
   ]
 }
 
-// 切换到真实数据库模式
-const switchToRealMode = () => {
-  localStorage.removeItem('demo_mode')
-  localStorage.removeItem('demo_role')
-  localStorage.removeItem('demo_user')
-  message.info('已切换到真实数据库模式，请重新登录')
-  // 刷新页面
-  window.location.reload()
-}
+// 切换到真实数据库模式功能已移除
 
 // 简单的MD5实现（仅用于演示，生产环境应使用更安全的哈希算法）
 const md5 = (str) => {
@@ -402,6 +386,7 @@ const handlePasswordChange = async () => {
   color: #1890ff;
   margin-bottom: 8px;
   font-size: 24px;
+  font-family: 'SimSun', serif;
 }
 
 .login-header p {
@@ -410,12 +395,7 @@ const handlePasswordChange = async () => {
   margin-bottom: 4px;
 }
 
-.login-header .login-tip {
-  color: #ff4d4f;
-  font-size: 12px;
-  font-weight: 500;
-  margin-top: 8px;
-}
+/* .login-tip 样式已移除 */
 
 .form {
   width: 100%;

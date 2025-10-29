@@ -58,13 +58,14 @@
 
     <!-- 需求列表 -->
     <a-card class="content-card">
-      <a-tabs v-model:activeKey="activeTab" type="card">
+      <a-tabs v-model:activeKey="activeTab" type="card" @change="handleTabChange">
         <a-tab-pane key="draft" tab="草稿">
           <div class="tab-content">
             <a-table
               :columns="columns"
-              :data-source="draftDemands"
+              :data-source="paginatedDraftDemands"
               :pagination="pagination"
+              @change="handlePageChange"
               row-key="id"
             >
               <template #bodyCell="{ column, record }">
@@ -93,6 +94,11 @@
                     {{ getUrgencyText(record.urgency) }}
                   </span>
                 </template>
+                <template v-else-if="column.key === 'status'">
+                  <span :class="['status-tag', `status-${record.status}`]">
+                    {{ getStatusText(record.status) }}
+                  </span>
+                </template>
               </template>
             </a-table>
           </div>
@@ -102,8 +108,9 @@
           <div class="tab-content">
             <a-table
               :columns="columns"
-              :data-source="submittedDemands"
+              :data-source="paginatedSubmittedDemands"
               :pagination="pagination"
+              @change="handlePageChange"
               row-key="id"
             >
               <template #bodyCell="{ column, record }">
@@ -192,7 +199,7 @@
         </a-form-item>
         
         <a-form-item label="支教时间" required>
-          <a-input v-model:value="addForm.duration" placeholder="例如：2023-2024学年第一学期" />
+          <a-input v-model:value="addForm.duration" placeholder="请按格式输入：2023-2024学年第一学期/2023年9月-2024年1月" />
         </a-form-item>
         
         <a-form-item label="紧急程度" required>
@@ -221,7 +228,7 @@
         <a-form-item label="负责人联系方式" required name="contact">
           <a-input
             v-model:value="addForm.contact"
-            placeholder="请输入负责人手机号或邮箱"
+            placeholder="请输入负责人手机号(11位数字)或邮箱"
             show-count
             :maxlength="100"
           />
@@ -371,6 +378,16 @@ const getCurrentUser = async () => {
 }
 
 // 从数据库加载需求数据
+// 处理标签页切换，更新分页信息
+const handleTabChange = (key) => {
+  activeTab.value = key
+  // 根据当前活动标签页更新分页总数
+  pagination.value.total = key === 'draft' ? draftDemands.value.length : submittedDemands.value.length
+  console.log('标签页切换，更新分页总数为:', pagination.value.total)
+  // 重置到第一页，确保是正数
+  pagination.value.current = 1
+}
+
 const loadDemands = async () => {
     loading.value = true
     try {
@@ -465,8 +482,8 @@ const loadDemands = async () => {
       console.log('加载到的已提交需求数据:', submittedDemands.value)
       
       // 根据当前活动标签页设置分页总数
-      pagination.total = activeTab.value === 'draft' ? draftDemands.value.length : submittedDemands.value.length
-      console.log('设置分页总数为:', pagination.total)
+      pagination.value.total = activeTab.value === 'draft' ? draftDemands.value.length : submittedDemands.value.length
+      console.log('设置分页总数为:', pagination.value.total)
     
     console.log('最终处理后的已提交需求数据:', submittedDemands.value)
   } catch (error) {
@@ -490,6 +507,22 @@ const stats = computed(() => {
   const approved = submittedDemands.value.filter(d => d.status === 'approved').length
   
   return { total, draft, submitted, approved }
+})
+
+// 分页后的数据 - 草稿箱
+const paginatedDraftDemands = computed(() => {
+  const { current, pageSize } = pagination.value
+  const start = (current - 1) * pageSize
+  const end = start + pageSize
+  return draftDemands.value.slice(start, end)
+})
+
+// 分页后的数据 - 已提交
+const paginatedSubmittedDemands = computed(() => {
+  const { current, pageSize } = pagination.value
+  const start = (current - 1) * pageSize
+  const end = start + pageSize
+  return submittedDemands.value.slice(start, end)
 })
 
 const columns = [
@@ -540,17 +573,30 @@ const columns = [
   }
 ]
 
-const pagination = {
+// 使用ref创建响应式分页配置
+const pagination = ref({
   current: 1,
   pageSize: 10,
   total: 0, // 初始值，将在数据加载后动态更新
   showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'], // 添加每页条数选项
   showQuickJumper: true,
   showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`
+})
+
+// 处理分页变化，确保current为正数
+// 注意：ant-design-vue的分页回调参数是一个对象
+const handlePageChange = (paginationConfig) => {
+  // 确保current始终为正数
+  pagination.value.current = Math.max(1, Number(paginationConfig.current) || 1)
+  pagination.value.pageSize = paginationConfig.pageSize || 10
+  console.log('分页变化:', pagination.value.current, pagination.value.pageSize)
+  // 这里可以根据需要重新加载数据或进行本地分页
 }
 
 const getStatusText = (status) => {
   const texts = {
+    draft: '草稿',
     pending: '审核中',
     approved: '已通过',
     rejected: '已驳回'
@@ -584,10 +630,38 @@ const resetForm = () => {
   isEditMode.value = false
 }
 
+// 验证支教时间格式
+const validateDurationFormat = (duration) => {
+  // 支持两种格式：1. xxxx-xxxx学年第x学期  2. xxxx年x月-xxxx年x月
+  const semesterPattern = /^\d{4}-\d{4}学年第[一二]学期$/;
+  const monthRangePattern = /^\d{4}年\d{1,2}月-\d{4}年\d{1,2}月$/;
+  return semesterPattern.test(duration) || monthRangePattern.test(duration);
+}
+
+// 验证联系方式格式
+const validateContactFormat = (contact) => {
+  // 支持两种格式：1. 11位数字手机号  2. 标准邮箱格式
+  const phonePattern = /^1\d{10}$/;
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return phonePattern.test(contact) || emailPattern.test(contact);
+}
+
 const handleAdd = async () => {
   // 添加必填字段验证
   if (!addForm.subject || !addForm.grade || !addForm.demand || !addForm.duration || !addForm.contact) {
     message.error('请填写必填字段，包括负责人联系方式')
+    return
+  }
+  
+  // 验证支教时间格式
+  if (!validateDurationFormat(addForm.duration)) {
+    message.error('支教时间格式不正确，请按提示格式输入')
+    return
+  }
+  
+  // 验证联系方式格式
+  if (!validateContactFormat(addForm.contact)) {
+    message.error('联系方式格式不正确，请输入正确的手机号或邮箱')
     return
   }
   
@@ -895,6 +969,12 @@ const closeDetailModal = () => {
 }
 
 /* 状态标签样式 */
+.status-draft {
+  background: #F0F9FF;
+  color: var(--primary-color);
+  border: 1px solid #93C5FD;
+}
+
 .status-pending {
   background: #FFFBEB;
   color: var(--warning-color);
