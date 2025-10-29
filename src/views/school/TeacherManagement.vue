@@ -95,10 +95,12 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../../lib/supabaseClient.js'
+import { useUserStore } from '../../stores/user.js'
 
 const activeTab = ref('current')
 const showDetailModal = ref(false)
 const currentTeacher = ref(null)
+const userStore = useUserStore()
 
 const currentTeachers = ref([
   {
@@ -171,52 +173,143 @@ const viewHistory = (record) => {
 
 const refreshTeachers = async () => {
   try {
-    // 从数据库获取最新的教师（已分配学生）数据
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('organization')
-      .eq('id', (await supabase.auth.getUser()).data.user?.id)
-      .single()
-
-    if (!profile) {
-      message.error('未找到用户组织信息')
+    // 优先从Pinia store获取用户信息
+    if (userStore.isAuthenticated) {
+      console.log('使用Pinia store用户信息')
+    } else {
+      // 如果store中没有用户信息，尝试从localStorage获取（兼容旧模式）
+      const currentUserStr = localStorage.getItem('current_user') || localStorage.getItem('demo_user')
+      
+      if (!currentUserStr) {
+        message.error('未找到用户信息，请重新登录')
+        // 清除可能存在的过时用户数据
+        localStorage.clear()
+        // 跳转到登录页
+        window.location.href = '/login'
+        return
+      }
+      
+      let currentUser
+      try {
+        currentUser = JSON.parse(currentUserStr)
+        // 更新到Pinia store
+        userStore.setUserInfo(currentUser)
+      } catch (e) {
+        message.error('用户信息解析失败')
+        localStorage.clear()
+        window.location.href = '/login'
+        return
+      }
+    }
+    
+    // 检查是否为演示模式
+    const demoMode = localStorage.getItem('demo_mode') === 'true'
+    
+    if (demoMode) {
+      // 演示模式：使用模拟数据
+      console.log('演示模式：使用预设数据')
+      // 这里可以保留原有的模拟数据
+      message.success('数据已刷新（演示模式）')
       return
     }
-
-    // 获取分配到当前学校的学生
-    const { data, error } = await supabase
-      .from('student_assignments')
-      .select(`
-        *, 
-        students(name, major, grade, contact)
-      `)
-      .eq('school_name', profile.organization)
-      .eq('status', 'active')
-
-    if (error) {
-      throw error
+    
+    // 真实模式：尝试获取用户组织信息
+    let organization
+    
+    // 从store获取用户信息
+    const currentUser = userStore.userInfo
+    
+    // 方法1：尝试直接从当前用户信息获取
+    if (currentUser?.organization) {
+      organization = currentUser.organization
+    } 
+    // 方法2：如果用户信息中没有组织信息，尝试从Supabase获取
+    else {
+      try {
+        // 首先尝试使用Supabase认证获取用户ID
+        let userId
+        try {
+          const { data: authData } = await supabase.auth.getUser()
+          if (authData.user) {
+            userId = authData.user.id
+          }
+        } catch (authError) {
+          console.warn('Supabase认证失败，尝试其他方式获取用户信息')
+        }
+        
+        // 如果无法通过认证获取用户ID，尝试从当前用户数据中获取
+        if (!userId && currentUser?.id) {
+          userId = currentUser.id
+        }
+        
+        if (!userId) {
+          throw new Error('无法获取用户ID')
+        }
+        
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('organization')
+          .eq('id', userId)
+          .single()
+        
+        if (!profile || !profile.organization) {
+          throw new Error('未找到用户组织信息')
+        }
+        
+        organization = profile.organization
+      } catch (profileError) {
+        console.error('获取用户组织信息失败:', profileError)
+        // 如果获取失败，使用一个默认组织名或提示用户
+        organization = currentUser?.name || '未知学校'
+      }
     }
+    
+    console.log('当前组织:', organization)
+    
+    // 获取分配到当前学校的学生
+    try {
+      const { data, error } = await supabase
+        .from('student_assignments')
+        .select(`
+          *,
+          students(name, major, grade, contact)
+        `)
+        .eq('school_name', organization)
+        .eq('status', 'active')
 
-    // 更新教师列表数据
-    if (data && data.length > 0) {
-      currentTeachers.value = data.map(assignment => ({
-        id: assignment.student_id,
-        name: assignment.students.name,
-        subject: assignment.teaching_subject,
-        grade: assignment.teaching_grade,
-        university: '合作大学', // 可从students表获取详细信息
-        startDate: assignment.start_date.split('T')[0],
-        endDate: '待定', // 可从assignment_period计算
-        performance: 0, // 初始表现分数
-        contact: assignment.students.contact || '暂无联系方式',
-        remarks: '新分配' // 初始备注
-      }))
+      if (error) {
+        console.error('获取分配数据失败:', error)
+        // 显示模拟数据作为后备
+        message.warning('获取最新数据失败，显示演示数据')
+        return
+      }
+
+      // 更新教师列表数据
+      if (data && data.length > 0) {
+        currentTeachers.value = data.map(assignment => ({
+          id: assignment.student_id,
+          name: assignment.students.name,
+          subject: assignment.teaching_subject,
+          grade: assignment.teaching_grade,
+          university: assignment.students?.university || '合作大学',
+          startDate: assignment.start_date ? assignment.start_date.split('T')[0] : '待定',
+          endDate: assignment.end_date ? assignment.end_date.split('T')[0] : '待定',
+          performance: assignment.performance || 0,
+          contact: assignment.students.contact || '暂无联系方式',
+          remarks: assignment.remarks || '新分配'
+        }))
+      } else {
+        console.log('没有找到活跃的教师分配记录')
+      }
+    } catch (dbError) {
+      console.error('数据库查询失败:', dbError)
+      message.warning('获取数据失败，显示演示数据')
     }
     
     message.success('数据已刷新')
   } catch (error) {
     console.error('刷新教师数据失败:', error)
-    message.error('刷新数据失败，请稍后重试')
+    message.error('刷新数据失败：' + error.message)
   }
 }
 

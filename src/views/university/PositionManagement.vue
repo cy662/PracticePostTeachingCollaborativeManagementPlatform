@@ -109,12 +109,14 @@ import { ref, reactive, onMounted } from 'vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../../lib/supabaseClient'
+import { useUserStore } from '../../stores/user.js'
 
 const showAssignModal = ref(false)
 const assignLoading = ref(false)
 const studentsLoading = ref(false)
 const positionsLoading = ref(false)
 const currentPosition = ref(null)
+const userStore = useUserStore()
 
 const positions = ref([])
 const availableStudents = ref([])
@@ -409,12 +411,46 @@ const handleAssign = async () => {
   assignLoading.value = true
   try {
     // 获取当前用户ID
-    const { data: userData } = await supabase.auth.getUser()
-    const currentUserId = userData.user?.id
+    let currentUserId
     
-    if (!currentUserId) {
-      throw new Error('用户未登录')
+    // 优先从Pinia store获取用户信息
+    if (userStore.isAuthenticated) {
+      currentUserId = userStore.userInfo.id
+    } else {
+      // 尝试从localStorage获取用户信息
+      const currentUserStr = localStorage.getItem('current_user') || localStorage.getItem('demo_user')
+      
+      if (currentUserStr) {
+        try {
+          const userInfo = JSON.parse(currentUserStr)
+          currentUserId = userInfo.id
+          // 更新到Pinia store
+          userStore.setUserInfo(userInfo)
+        } catch (e) {
+          console.error('解析用户信息失败:', e)
+        }
+      }
+      
+      // 如果从localStorage无法获取用户ID，尝试使用Supabase认证作为后备
+      if (!currentUserId) {
+        try {
+          const { data: userData } = await supabase.auth.getUser()
+          currentUserId = userData.user?.id
+        } catch (authError) {
+          console.warn('Supabase认证失败，使用默认用户ID')
+        }
+      }
     }
+    
+    // 如果仍然无法获取用户ID，使用一个默认值或生成一个临时ID
+    if (!currentUserId) {
+      // 使用用户名或其他信息作为ID
+      const userRole = localStorage.getItem('user_role') || localStorage.getItem('demo_role')
+      currentUserId = `temp_${userRole}_${Date.now()}`
+      console.log('使用临时用户ID:', currentUserId)
+    }
+    
+    console.log('当前用户ID:', currentUserId)
     
     // 更新学生状态并创建分配记录
     for (const student of selectedStudents.value) {

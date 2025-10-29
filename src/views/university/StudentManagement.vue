@@ -353,6 +353,7 @@ import { message } from 'ant-design-vue'
 import { supabase } from '../../lib/supabaseClient.js'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
+import { useUserStore } from '../../stores/user.js'
 
 const showAddModal = ref(false)
 const showImportModal = ref(false)
@@ -364,6 +365,9 @@ const loading = ref(false)
 const currentUser = ref(null)
 const isEditing = ref(false)
 const editingStudentId = ref(null)
+
+// 使用Pinia store
+const userStore = useUserStore()
 
 // 导入相关变量
 const fileList = ref([])
@@ -402,25 +406,120 @@ const students = ref([])
 // 获取当前用户信息
 const getCurrentUser = async () => {
   try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      currentUser.value = user
+    // 优先从Pinia store获取用户信息
+    if (userStore.isAuthenticated) {
+      currentUser.value = userStore.userInfo
+      console.log('使用Pinia store用户信息:', currentUser.value)
+    } else {
+      // 首先尝试从localStorage获取用户信息（兼容演示模式和真实模式）
+      const currentUserStr = localStorage.getItem('current_user') || localStorage.getItem('demo_user')
       
-      // 检查用户是否有大学管理员权限
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+      if (!currentUserStr) {
+        message.error('未找到用户信息，请重新登录')
+        // 清除可能存在的过时用户数据
+        localStorage.clear()
+        // 跳转到登录页
+        window.location.href = '/login'
+        return false
+      }
       
-      if (!profile || profile.role !== 'university') {
+      let userInfo
+      try {
+        userInfo = JSON.parse(currentUserStr)
+      } catch (e) {
+        message.error('用户信息解析失败')
+        localStorage.clear()
+        window.location.href = '/login'
+        return false
+      }
+      
+      currentUser.value = userInfo
+      // 同时更新到Pinia store
+      userStore.setUserInfo(currentUser.value)
+    }
+    
+    // 检查是否为演示模式
+    const demoMode = localStorage.getItem('demo_mode') === 'true'
+    
+    if (demoMode) {
+      // 演示模式：直接检查角色
+      if (currentUser.value.role !== 'university') {
+        message.error('您没有权限访问此页面')
+        return false
+      }
+      return true
+    }
+    
+    // 真实模式：尝试检查用户权限
+    // 方法1：直接从用户信息检查角色
+    if (currentUser.value.role && currentUser.value.role === 'university') {
+      return true
+    }
+    
+    // 方法2：如果用户信息中没有角色信息，尝试从Supabase获取
+    try {
+      // 尝试获取用户ID
+      let userId
+      if (currentUser.value.id) {
+        userId = currentUser.value.id
+      } else {
+        // 作为后备，尝试使用Supabase认证
+        try {
+          const { data: authData } = await supabase.auth.getUser()
+          if (authData.user) {
+            userId = authData.user.id
+          }
+        } catch (authError) {
+          console.warn('Supabase认证失败，使用本地用户信息')
+        }
+      }
+      
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('id', userId)
+          .single()
+        
+        if (!profile || profile.role !== 'university') {
+          message.error('您没有权限访问此页面')
+          return false
+        }
+        
+        // 更新用户信息到store
+      userStore.setUserInfo(profile)
+      } else {
+        // 如果无法获取用户ID，回退到检查本地角色
+        const userRole = localStorage.getItem('user_role') || localStorage.getItem('demo_role')
+        if (!userRole || userRole !== 'university') {
+          message.error('您没有权限访问此页面')
+          return false
+        }
+        
+        // 更新用户角色信息到store
+      if (currentUser.value) {
+        currentUser.value.role = userRole
+        userStore.setUserInfo(currentUser.value)
+      }
+      }
+      
+      return true
+    } catch (profileError) {
+      console.error('获取用户权限失败:', profileError)
+      // 作为最后的后备，检查本地存储的角色
+      const userRole = localStorage.getItem('user_role') || localStorage.getItem('demo_role')
+      if (!userRole || userRole !== 'university') {
         message.error('您没有权限访问此页面')
         return false
       }
       
+      // 更新用户角色信息到store
+      if (currentUser.value) {
+        currentUser.value.role = userRole
+        userStore.setUserInfo(currentUser.value)
+      }
       return true
     }
-    return false
   } catch (error) {
     console.error('获取用户信息失败:', error)
     message.error('获取用户信息失败')

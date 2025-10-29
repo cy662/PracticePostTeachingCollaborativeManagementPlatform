@@ -1,17 +1,34 @@
 import { defineStore } from 'pinia'
 
 export const useUserStore = defineStore('user', {
-  state: () => ({
-    token: localStorage.getItem('token') || '',
-    userInfo: {
-      username: localStorage.getItem('username') || '',
-      role: localStorage.getItem('userRole') || ''
+  state: () => {
+    // 尝试从localStorage获取当前用户信息
+    let userInfo = {}
+    try {
+      const currentUser = localStorage.getItem('current_user')
+      if (currentUser) {
+        userInfo = JSON.parse(currentUser)
+      } else {
+        // 尝试获取演示用户数据
+        const demoUser = localStorage.getItem('demo_user')
+        if (demoUser) {
+          userInfo = JSON.parse(demoUser)
+        }
+      }
+    } catch (error) {
+      console.error('解析用户信息失败:', error)
     }
-  }),
+    
+    return {
+      token: localStorage.getItem('token') || '',
+      userInfo: userInfo,
+      role: localStorage.getItem('user_role') || localStorage.getItem('demo_role') || ''
+    }
+  },
   
   getters: {
-    isAuthenticated: (state) => !!state.token,
-    userRole: (state) => state.userInfo.role
+    isAuthenticated: (state) => !!state.token || !!state.userInfo.phone || !!state.role,
+    userRole: (state) => state.role || state.userInfo.role || ''
   },
   
   actions: {
@@ -22,17 +39,25 @@ export const useUserStore = defineStore('user', {
     
     setUserInfo(userInfo) {
       this.userInfo = userInfo
-      localStorage.setItem('username', userInfo.username)
-      localStorage.setItem('userRole', userInfo.role)
+      this.role = userInfo.role
+      // 使用与登录页面和路由一致的键名
+      localStorage.setItem('current_user', JSON.stringify(userInfo))
+      localStorage.setItem('user_role', userInfo.role)
     },
     
     clearUserInfo() {
       this.token = ''
-      this.userInfo = {
-        username: '',
-        role: ''
-      }
-      localStorage.clear()
+      this.userInfo = {}
+      this.role = ''
+      // 清除所有相关的用户信息
+      localStorage.removeItem('token')
+      localStorage.removeItem('current_user')
+      localStorage.removeItem('user_role')
+      localStorage.removeItem('demo_mode')
+      localStorage.removeItem('demo_role')
+      localStorage.removeItem('demo_user')
+      localStorage.removeItem('username')
+      localStorage.removeItem('userRole')
     },
     
     // 模拟登录
@@ -44,14 +69,12 @@ export const useUserStore = defineStore('user', {
         const userData = {
           username: credentials.username,
           role: credentials.role,
-          token: 'demo-token-' + Date.now()
+          token: 'demo-token-' + Date.now(),
+          phone: credentials.phone || ''
         }
         
         this.setToken(userData.token)
-        this.setUserInfo({
-          username: userData.username,
-          role: userData.role
-        })
+        this.setUserInfo(userData)
         
         return userData
       } catch (error) {

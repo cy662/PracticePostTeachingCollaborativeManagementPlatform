@@ -92,8 +92,10 @@ import { useRouter } from 'vue-router'
 import { MobileOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabaseClient.js'
+import { useUserStore } from '../stores/user.js'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const passwordModalVisible = ref(false)
 const passwordLoading = ref(false)
@@ -174,13 +176,18 @@ const onFinish = async (values) => {
       // 检查是否为超级管理员演示账号
       if (formState.phone === '13800138000' && values.password === 'admin123456') {
         // 超级管理员演示 - 设置演示模式标识
-        localStorage.setItem('demo_mode', 'true')
-        localStorage.setItem('demo_role', 'super_admin')
-        localStorage.setItem('demo_user', JSON.stringify({
+        // 演示用户信息
+        const userData = {
           phone: '13800138000',
           name: '超级管理员',
           role: 'super_admin'
-        }))
+        }
+        // 设置演示模式标识和用户信息
+        localStorage.setItem('demo_mode', 'true')
+        localStorage.setItem('demo_role', 'super_admin')
+        localStorage.setItem('demo_user', JSON.stringify(userData))
+        // 更新Pinia store
+        userStore.setUserInfo(userData)
         message.success('超级管理员登录成功（演示模式）')
         router.push('/super-admin/dashboard')
         return
@@ -197,12 +204,17 @@ const onFinish = async (values) => {
         const account = demoAccounts[formState.phone]
         // 设置演示模式标识
         localStorage.setItem('demo_mode', 'true')
-        localStorage.setItem('demo_role', account.role)
-        localStorage.setItem('demo_user', JSON.stringify({
+        // 演示用户信息
+        const userData = {
           phone: formState.phone,
           name: account.name,
           role: account.role
-        }))
+        }
+        // 设置演示模式标识和用户信息
+        localStorage.setItem('demo_role', account.role)
+        localStorage.setItem('demo_user', JSON.stringify(userData))
+        // 更新Pinia store
+        userStore.setUserInfo(userData)
         message.success(`${account.name}登录成功（演示模式）`)
         router.push(`/${account.role}`)
         return
@@ -263,6 +275,8 @@ const onFinish = async (values) => {
       // 设置用户信息到本地存储
       localStorage.setItem('current_user', JSON.stringify(profile))
       localStorage.setItem('user_role', profile.role)
+      // 更新Pinia store
+      userStore.setUserInfo(profile)
       message.success(`${profile.name}登录成功`)
       
       // 根据角色跳转到对应页面
@@ -284,13 +298,18 @@ const onFinish = async (values) => {
       if (demoAccounts[formState.phone] && values.password === 'admin123456') {
         const account = demoAccounts[formState.phone]
         // 设置演示模式标识
-        localStorage.setItem('demo_mode', 'true')
-        localStorage.setItem('demo_role', account.role)
-        localStorage.setItem('demo_user', JSON.stringify({
+        // 演示用户信息
+        const userData = {
           phone: formState.phone,
           name: account.name,
           role: account.role
-        }))
+        }
+        // 设置演示模式标识和用户信息
+        localStorage.setItem('demo_mode', 'true')
+        localStorage.setItem('demo_role', account.role)
+        localStorage.setItem('demo_user', JSON.stringify(userData))
+        // 更新Pinia store
+        userStore.setUserInfo(userData)
         message.success(`${account.name}登录成功（演示模式）`)
         
         if (account.role === 'super_admin') {
@@ -333,6 +352,8 @@ const handlePasswordChange = async () => {
     // 设置用户信息到本地存储
     localStorage.setItem('current_user', JSON.stringify(currentUserInfo.value))
     localStorage.setItem('user_role', currentUserInfo.value.role)
+    // 更新Pinia store
+    userStore.setUserInfo(currentUserInfo.value)
     
     // 关闭弹窗
     passwordModalVisible.value = false
