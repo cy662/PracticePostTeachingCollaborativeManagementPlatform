@@ -171,7 +171,7 @@
       v-model:open="showAddModal"
       title="添加学生"
       width="600px"
-      @ok="handleModalOk"
+      @ok="handleAdd"
       @cancel="handleModalCancel"
       :confirm-loading="addLoading"
     >
@@ -533,10 +533,11 @@ const loadStudents = async (usePagination = true) => {
   try {
     if (!await getCurrentUser()) return
 
-    // 构建查询
+    // 构建查询 - 使用更明确的方式避免 406 错误
+    const columns = 'id,student_id,name,gender,birth_date,phone,email,major,grade,class_name,admission_year,graduation_year,teaching_subject,created_by,status,created_at'
     let query = supabase
       .from('students')
-      .select('*')
+      .select(columns)
       .order('created_at', { ascending: false })
     
     // 应用分页（除非指定不使用）
@@ -545,20 +546,29 @@ const loadStudents = async (usePagination = true) => {
       query = query.range(offset, offset + pagination.pageSize - 1)
       
       // 获取总数
-      const { count: totalCount } = await supabase
+      const { count: totalCount, error: countError } = await supabase
         .from('students')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
       
-      pagination.total = totalCount
+      if (countError) {
+        console.error('获取总数失败:', countError)
+        // 使用默认值继续，避免整个功能失败
+        pagination.total = 0
+      } else {
+        pagination.total = totalCount || 0
+      }
     }
 
     const { data, error } = await query
     
-    if (error) throw error
+    if (error) {
+      console.error('查询学生数据失败:', error)
+      throw error
+    }
     students.value = data || []
   } catch (error) {
     console.error('加载学生数据失败:', error)
-    message.error('加载数据失败，请刷新页面重试')
+    message.error('加载数据失败，请检查网络连接或联系管理员')
   } finally {
     loading.value = false
   }
@@ -746,15 +756,27 @@ const handleAdd = async () => {
       return
     }
 
-    // 检查学号是否已存在
-    const { data: existingStudent } = await supabase
+    // 验证学号格式
+    if (!/^[A-Za-z0-9]{1,20}$/.test(addForm.studentId)) {
+      message.error('学号格式不正确，请使用字母和数字，长度不超过20位')
+      return
+    }
+
+    // 检查学号是否已存在（使用更可靠的查询方式）
+    const { data: existingStudents, error: checkError } = await supabase
       .from('students')
       .select('id')
       .eq('student_id', addForm.studentId)
-      .single()
+      .limit(1)
 
-    if (existingStudent) {
-      message.error('该学号已存在')
+    if (checkError) {
+      console.error('检查学号是否存在时出错:', checkError)
+      message.error('系统错误，请稍后重试')
+      return
+    }
+
+    if (existingStudents && existingStudents.length > 0) {
+      message.error('该学号已存在，请使用不同的学号')
       return
     }
 
@@ -764,7 +786,17 @@ const handleAdd = async () => {
       const date = dayjs(addForm.birthDate)
       if (date.isValid()) {
         birthDateValue = date.format('YYYY-MM-DD')
+      } else {
+        message.error('出生日期格式不正确')
+        return
       }
+    }
+
+    // 验证入学年份
+    const currentYear = new Date().getFullYear()
+    if (addForm.admissionYear < 2000 || addForm.admissionYear > currentYear + 1) {
+      message.error('入学年份应该在2000年到' + (currentYear + 1) + '年之间')
+      return
     }
 
     // 添加学生到数据库
@@ -790,7 +822,23 @@ const handleAdd = async () => {
       .insert([newStudentData])
       .select()
 
-    if (error) throw error
+    if (error) {
+      console.error('添加学生失败:', error)
+      // 特殊处理冲突错误
+      if (error.code === '23505') { // PostgreSQL 唯一约束冲突错误码
+        message.error('添加失败：学号已存在')
+      } else if (error.code === '409') {
+        message.error('添加失败：数据冲突，请检查输入')
+      } else {
+        throw error
+      }
+      return
+    }
+
+    if (!data || data.length === 0) {
+      message.error('添加失败：未返回新添加的学生数据')
+      return
+    }
 
     // 重新加载数据以显示新添加的学生
     await loadStudents()
@@ -799,7 +847,7 @@ const handleAdd = async () => {
     closeModalAndReset()
   } catch (error) {
     console.error('添加学生失败:', error)
-    message.error('添加失败，请重试')
+    message.error('添加失败，请检查网络连接或联系管理员')
     closeModalAndReset()
   } finally {
     addLoading.value = false
@@ -1254,11 +1302,6 @@ const closeModalAndReset = () => {
     resetForm()
     console.log('状态重置完成')
   }, 100)
-}
-
-// 处理模态框确认按钮
-const handleModalOk = () => {
-  handleAdd()
 }
 
 // 处理模态框取消按钮
