@@ -303,7 +303,7 @@ const fetchDemands = async () => {
         // 为每条记录创建格式化对象
         const formattedDemand = {
           id: demand.id || `unknown_${index}`,
-          schoolName: demand.school_name || demand.organization || '未知学校',
+          schoolName: demand.organization || demand.school_name || '未知学校',
           subject: demand.subject || '未知科目',
           grade: demand.grade || '未知年级',
           demand: demand.demand_count || demand.count || 0,

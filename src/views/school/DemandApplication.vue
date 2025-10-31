@@ -454,7 +454,7 @@ const loadDemands = async () => {
 
       console.log('开始查询已提交需求数据...')
       // 查询已提交需求，明确选择所有需要的字段
-      const { data: submitted, error: submittedError } = await supabase
+      let { data: submitted, error: submittedError } = await supabase
         .from('teaching_demands')
         .select('*')
         .eq('organization', organization)
@@ -709,9 +709,9 @@ const handleAdd = async () => {
       // 保存到数据库
       console.log('新增模式，保存数据:', commonData)
       
-      // 处理created_by字段，使用有效的UUID格式作为演示用户ID
+      // 处理created_by字段，使用数据库中实际存在的超级管理员ID
       // 确保能够成功向数据库插入新记录
-      const demoUserId = '7b6323c7-9ed9-41c7-b052-db1fbae1c72b'
+      const demoUserId = '3a4ddbe2-4211-4d4e-9ebd-ed71f691c0bc'
       let createdById = demoUserId
       
       console.log('使用有效的UUID格式作为演示用户ID:', createdById)

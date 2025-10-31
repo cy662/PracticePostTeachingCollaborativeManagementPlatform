@@ -31,6 +31,10 @@
           <bar-chart-outlined />
           <span>数据统计</span>
         </a-menu-item>
+        <a-menu-item key="/super-admin/organization-management">
+          <team-outlined />
+          <span>机构管理</span>
+        </a-menu-item>
       </a-menu>
     </a-layout-sider>
 

@@ -38,6 +38,11 @@ const routes = [
         path: 'statistics',
         name: 'AdminStatistics',
         component: () => import('../views/super-admin/Statistics.vue')
+      },
+      {
+        path: 'organization-management',
+        name: 'OrganizationManagement',
+        component: () => import('../views/super-admin/OrganizationManagement.vue')
       }
     ]
   },

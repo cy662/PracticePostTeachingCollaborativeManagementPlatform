@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // 获取Supabase连接信息
-const SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54321';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54323';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pZ2ZoZWR0dGh6d29vbW5rZ3p0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDYzODI0MTIsImV4cCI6MjAyMTk1ODQxMn0.918XJQHwlQl31w8GdX2x7m2v8Uj3f0iZ4Ww7I2q3XFs'; // 默认开发密钥
 
 // 创建Supabase客户端
