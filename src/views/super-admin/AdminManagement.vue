@@ -146,6 +146,7 @@
       :confirm-loading="modalLoading"
       @ok="handleModalOk"
       @cancel="handleModalCancel"
+      @close="handleModalCancel"
     >
       <a-form
         ref="formRef"
@@ -161,7 +162,22 @@
           <a-input v-model:value="formState.phone_number" placeholder="请输入手机号" />
         </a-form-item>
         <a-form-item label="所属机构" name="organization">
-          <a-input v-model:value="formState.organization" placeholder="请输入所属机构" />
+          <a-select
+              v-model:value="formState.organization"
+              placeholder="请输入机构名称或编号进行搜索"
+              :loading="organizationsLoading"
+              show-search
+              :filter-option="false"
+              @search="handleOrganizationSearch"
+              option-filter-prop="label"
+            >
+            <a-select-option v-for="org in organizations" :key="org.id" :value="org.name" :label="`${org.name} (${org.code})`">
+              {{ org.name }} ({{ org.code }})
+            </a-select-option>
+            <a-select-option v-if="organizations.length === 0 && organizationsLoading === false" disabled>
+              {{ organizationSearch ? '没有找到匹配的机构' : '暂无机构数据' }}
+            </a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item label="角色" name="role">
           <a-select v-model:value="formState.role" placeholder="请选择角色">
@@ -192,6 +208,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { supabase } from '../../lib/supabaseClient.js'
+import { organizationService } from '../../api/organizationService.js'
 import {
   SearchOutlined,
   RedoOutlined,
@@ -206,7 +223,9 @@ const exportLoading = ref(false)
 const modalVisible = ref(false)
 const modalLoading = ref(false)
 const formRef = ref(null)
-
+const organizations = ref([])
+const organizationsLoading = ref(false)
+const organizationSearch = ref('')
 // 搜索表单
 const searchForm = reactive({
   name: '',
@@ -233,7 +252,7 @@ const formRules = {
     { required: true, message: '请输入手机号', trigger: 'blur' },
     { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
   ],
-  organization: [{ required: true, message: '请输入所属机构', trigger: 'blur' }],
+  organization: [{ required: true, message: '请选择所属机构', trigger: 'change' }],
   role: [{ required: true, message: '请选择角色', trigger: 'change' }],
   password: [{ required: true, message: '请输入初始密码', trigger: 'blur' }]
 }
@@ -329,6 +348,130 @@ const fetchAdminList = async () => {
   }
 }
 
+// 获取机构列表
+const fetchOrganizations = async (search = '') => {
+  try {
+    organizationsLoading.value = true
+    
+    console.log('开始获取机构数据，搜索关键词:', search);
+    
+    // 构建查询
+    let query = supabase
+      .from('organizations')
+      .select('*')
+      .limit(100)
+    
+    // 如果有搜索关键词，添加模糊查询条件
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      // 使用or条件搜索name和code字段，支持大小写不敏感的模糊匹配
+      query = query.or(
+        `name.ilike.%${searchTerm}%,code.ilike.%${searchTerm}%`
+      );
+      console.log('应用搜索过滤，关键词:', searchTerm);
+    }
+    
+    // 执行查询
+    const { data, error } = await query;
+    
+    console.log('从数据库获取的机构数据:', data);
+    console.log('查询错误:', error);
+    
+    // 处理数据库查询结果
+    if (!error && data && Array.isArray(data) && data.length > 0) {
+      // 过滤有效数据
+      const validOrganizations = data.filter(item => item && item.name && item.code);
+      
+      // 如果有搜索关键词，按匹配度排序
+      if (search && search.trim()) {
+        const searchTerm = search.trim().toLowerCase();
+        organizations.value = sortOrganizationsByRelevance(validOrganizations, searchTerm);
+      } else {
+        organizations.value = validOrganizations;
+      }
+      
+      console.log('过滤后的机构数据数量:', organizations.value.length);
+    } else {
+      console.log('数据库中没有找到机构数据或查询失败，使用备用数据');
+      // 如果数据库没有数据或查询失败，使用少量备用数据作为参考
+      let tempOrganizations = search ? 
+        [] : // 搜索时如果没有结果，显示空列表
+        [
+          { id: 1, name: '清华大学', code: 'THU001' },
+          { id: 2, name: '北京大学', code: 'PKU001' }
+        ];
+      
+      // 如果有搜索关键词，对备用数据也进行排序
+      if (search && search.trim() && tempOrganizations.length > 0) {
+        const searchTerm = search.trim().toLowerCase();
+        tempOrganizations = sortOrganizationsByRelevance(tempOrganizations, searchTerm);
+      }
+      
+      organizations.value = tempOrganizations;
+    }
+    
+  } catch (error) {
+    console.error('获取机构列表异常:', error)
+    message.error('获取机构列表失败: ' + error.message)
+    
+    // 异常情况下使用空列表
+    organizations.value = [];
+  } finally {
+    organizationsLoading.value = false
+  }
+}
+
+// 根据搜索关键词对机构进行排序，匹配度高的排在前面
+const sortOrganizationsByRelevance = (orgList, searchTerm) => {
+  return orgList.sort((a, b) => {
+    // 计算每个机构的匹配度分数
+    const scoreA = calculateRelevanceScore(a, searchTerm);
+    const scoreB = calculateRelevanceScore(b, searchTerm);
+    
+    // 分数高的排在前面
+    return scoreB - scoreA;
+  });
+};
+
+// 计算机构与搜索关键词的匹配度分数
+const calculateRelevanceScore = (org, searchTerm) => {
+  let score = 0;
+  const name = org.name ? org.name.toLowerCase() : '';
+  const code = org.code ? org.code.toLowerCase() : '';
+  
+  // 完全匹配得分最高
+  if (name === searchTerm || code === searchTerm) {
+    score += 100;
+  }
+  
+  // 以搜索词开头的匹配得分较高
+  if (name.startsWith(searchTerm)) score += 50;
+  if (code.startsWith(searchTerm)) score += 50;
+  
+  // 包含搜索词的基础得分
+  if (name.includes(searchTerm)) score += 20;
+  if (code.includes(searchTerm)) score += 20;
+  
+  // 名称匹配优先于代码匹配
+  if (name.includes(searchTerm)) score += 10;
+  
+  return score;
+};
+
+// 处理机构搜索
+const handleOrganizationSearch = (value) => {
+  console.log('搜索机构:', value)
+  organizationSearch.value = value
+  // 调用fetchOrganizations函数，传入搜索关键词
+  fetchOrganizations(value)
+}
+
+// 组件挂载时自动获取机构数据
+onMounted(() => {
+  console.log('组件挂载，自动获取机构数据');
+  fetchOrganizations();
+});
+
 // 搜索处理
 const handleSearch = () => {
   pagination.current = 1
@@ -383,6 +526,8 @@ const resetForm = () => {
     status: 'active',
     password: ''
   })
+  // 重置机构搜索
+  organizationSearch.value = ''
 }
 
 // 模态框确认
@@ -410,6 +555,20 @@ const handleModalOk = async () => {
     modalLoading.value = false
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // 添加管理员
 const addAdmin = async () => {
@@ -704,21 +863,25 @@ const exportData = async () => {
     // 创建 CSV 内容
     const csvContent = [
       headers.join(','),
-      ...csvData.map(row => row.join(','))
+      ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
     ].join('\n')
     
     // 创建下载链接
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = `管理员列表_${new Date().toISOString().split('T')[0]}.csv`
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `管理员列表_${formatDate(new Date()).replace(/\//g, '-')}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
     link.click()
+    document.body.removeChild(link)
     
     message.success('导出成功')
     
   } catch (error) {
-    console.error('导出失败:', error)
-    message.error('导出失败')
+    console.error('导出数据失败:', error)
+    message.error('导出失败: ' + error.message)
   } finally {
     exportLoading.value = false
   }
@@ -903,6 +1066,7 @@ const handleModalCancel = () => {
 
 onMounted(() => {
   fetchAdminList()
+  fetchOrganizations()
 })
 </script>
 
