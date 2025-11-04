@@ -61,11 +61,6 @@ const routes = [
         path: 'positions',
         name: 'UniversityPositions',
         component: () => import('../views/university/PositionManagement.vue')
-      },
-      {
-        path: 'monitoring',
-        name: 'UniversityMonitoring',
-        component: () => import('../views/university/MonitoringCenter.vue')
       }
     ]
   },
@@ -103,11 +98,6 @@ const routes = [
         path: 'teacher-management',
         name: 'SchoolTeacherManagement',
         component: () => import('../views/school/TeacherManagement.vue')
-      },
-      {
-        path: 'evaluation',
-        name: 'SchoolEvaluation',
-        component: () => import('../views/school/EvaluationCenter.vue')
       }
     ]
   }

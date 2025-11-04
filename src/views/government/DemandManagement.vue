@@ -733,35 +733,35 @@ const showPositionInfo = async (demand) => {
     const generatePopupContent = (hasData) => {
       let content = '<div class="popup-container">'
       
-      // 岗位基础信息区
-      content += '<div class="position-base-info">'
-      content += '<div class="grid-layout">'
-      content += `<div class="info-label">岗位 ID：</div>`
-      content += `<div class="info-divider">|</div>`
-      content += `<div class="info-value">${demand.id || '-'}</div>`
-      content += `<div class="info-label">学校：</div>`
-      content += `<div class="info-divider">|</div>`
-      content += `<div class="info-value">${demand.schoolName || demand.school_name || '-'}</div>`
-      content += `<div class="info-label">学科：</div>`
-      content += `<div class="info-divider">|</div>`
-      content += `<div class="info-value">${demand.subject || '-'}</div>`
-      content += `<div class="info-label">年级：</div>`
-      content += `<div class="info-divider">|</div>`
-      content += `<div class="info-value">${demand.grade || '-'}</div>`
-      content += `<div class="info-label">需求人数：</div>`
-      content += `<div class="info-divider">|</div>`
-      content += `<div class="info-value">${demand.demand || '-'}</div>`
-      content += `<div class="info-label">支教时间：</div>`
-      content += `<div class="info-divider">|</div>`
-      content += `<div class="info-value">${demand.duration || '-'}</div>`
-      content += '</div></div>'
+      // 使用左右布局容器
+      content += '<div class="details-container">'
       
-      // 分隔线
-      content += '<div class="divider"></div>'
+      // 左侧：岗位基础信息区
+      content += '<div class="left-panel">'
+      content += `<div class="section-title">岗位基本信息</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">岗位 ID：</span>${demand.id || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">学校：</span>${demand.schoolName || demand.school_name || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">学科：</span>${demand.subject || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">年级：</span>${demand.grade || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">需求人数：</span>${demand.demand || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">支教时间：</span>${demand.duration || '-'}`
+      content += `</div>`
+      content += `</div>`
       
-      // 学生分配信息区
+      // 右侧：学生分配信息区
+      content += '<div class="right-panel">'
       if (hasData) {
-        content += '<div class="student-list">'
         content += `<div class="section-title">已分配学生（共${assignments.length}人）</div>`
         
         assignments.forEach((assignment, index) => {
@@ -771,17 +771,15 @@ const showPositionInfo = async (demand) => {
           content += '<div class="student-card">'
           content += `<div class="student-index">【第${index + 1}位学生】</div>`
           content += '<div class="student-details">'
-          content += `<div><span class="detail-label">姓名：</span>${student.name || '-'}</div>`
-          content += `<div><span class="detail-label">学号：</span>${student.student_id || '-'}</div>`
-          content += `<div><span class="detail-label">专业：</span>${student.major || '-'}</div>`
-          content += `<div><span class="detail-label">年级：</span>${student.grade || '-'}</div>`
-          content += `<div><span class="detail-label">班级：</span>${student.class_name || '-'}</div>`
-          content += `<div><span class="detail-label">邮箱：</span>${student.email || '-'}</div>`
-          content += `<div><span class="detail-label">电话：</span>${student.phone || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">姓名：</span>${student.name || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">学号：</span>${student.student_id || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">专业：</span>${student.major || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">年级：</span>${student.grade || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">班级：</span>${student.class_name || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">邮箱：</span>${student.email || '-'}</div>`
+          content += `<div class="info-item"><span class="detail-label">电话：</span>${student.phone || '-'}</div>`
           content += '</div></div>'
         })
-        
-        content += '</div>'
       } else {
         // 无数据状态
         content += '<div class="empty-state">'
@@ -789,6 +787,12 @@ const showPositionInfo = async (demand) => {
         content += '<div class="empty-text">暂无岗位分配信息</div>'
         content += '</div>'
       }
+      
+      // 闭合右侧面板
+      content += '</div>'
+      
+      // 闭合左右布局容器
+      content += '</div>'
       
       content += '</div>'
       return content
@@ -799,6 +803,8 @@ const showPositionInfo = async (demand) => {
       title: '岗位信息与学生分配情况',
       content: h('div', { innerHTML: generatePopupContent(assignments && assignments.length > 0) }),
       centered: true,
+      width: '80%', // 设置弹窗宽度为屏幕宽度的80%
+      maxWidth: '600px', // 最大宽度不超过600px
       okText: '确定',
       okButtonProps: { class: 'custom-ok-btn' },
       onOk() { console.log('确认查看岗位信息') }
@@ -810,9 +816,133 @@ const showPositionInfo = async (demand) => {
   }
 }
 
-const viewDetails = (record) => {
+const viewDetails = async (record) => {
   console.log('查看需求详情:', record)
-  message.info(`查看需求详情: ${record.schoolName}\n学科: ${record.subject}\n年级: ${record.grade}\n需求人数: ${record.demand}\n${record.specialRequirements ? '特殊要求: ' + record.specialRequirements : ''}`)
+  
+  try {
+    // 查询大学分配给需求的学生信息
+    console.log('开始查询大学分配的学生信息...')
+    const { data: assignments, error } = await supabase
+      .from('position_student_assignments')
+      .select('*, students(*)')
+      .eq('position_id', record.id)
+      
+    console.log('查询到的分配信息:', assignments, error)
+    
+    // 生成弹窗内容
+    const generatePopupContent = (hasData) => {
+      let content = '<div class="popup-container">'
+      
+      // 使用左右布局容器
+      content += '<div class="details-container">'
+      
+      // 左侧：需求基础信息区
+      content += '<div class="left-panel">'
+      content += `<div class="section-title">需求基本信息</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">需求ID：</span>${record.id || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">学校名称：</span>${record.schoolName || record.school_name || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">学科：</span>${record.subject || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">年级：</span>${record.grade || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">需求人数：</span>${record.demand || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">支教时间：</span>${record.duration || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">紧急程度：</span>${getUrgencyText(record.urgency) || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">提交时间：</span>${record.submitTime || '-'}`
+      content += `</div>`
+      content += `<div class="info-item">`
+      content += `<span class="detail-label">联系方式：</span>${record.contact || '-'}`
+      content += `</div>`
+      if (record.specialRequirements) {
+        content += `<div class="info-item">`
+        content += `<span class="detail-label">特殊要求：</span>${record.specialRequirements || '-'}`
+        content += `</div>`
+      }
+      if (record.rejectedReason) {
+        content += `<div class="info-item rejection-reason">`
+        content += `<span class="detail-label">驳回原因：</span>${record.rejectedReason || '-'}`
+        content += `</div>`
+      }
+      content += `</div>`
+      
+      // 右侧：大学分配学生信息区
+      content += '<div class="right-panel">'
+      content += `<div class="section-title">大学分配学生信息</div>`
+      
+      if (hasData && assignments && Array.isArray(assignments)) {
+        // 统计已分配的学生数量
+        const assignedStudents = assignments.filter(a => a.students).length
+        
+        content += `<div class="assignment-summary">`
+        content += `<span>已分配学生 ${assignedStudents} 人</span>`
+        content += `</div>`
+        
+        // 学生信息列表 - 保持与左侧一致的info-item格式
+        const students = assignments.map(a => a.students).filter(s => s)
+        if (students.length > 0) {
+          students.forEach((student, index) => {
+            content += '<div class="student-card">'
+            content += `<div class="student-index">【第${index + 1}位学生】</div>`
+            content += '<div class="student-details">'
+            content += `<div class="info-item"><span class="detail-label">姓名：</span>${student.name || '-'}</div>`
+            content += `<div class="info-item"><span class="detail-label">学号：</span>${student.student_id || '-'}</div>`
+            content += `<div class="info-item"><span class="detail-label">专业：</span>${student.major || '-'}</div>`
+            content += `<div class="info-item"><span class="detail-label">年级：</span>${student.grade || '-'}</div>`
+            content += `<div class="info-item"><span class="detail-label">班级：</span>${student.class_name || '-'}</div>`
+            content += `<div class="info-item"><span class="detail-label">邮箱：</span>${student.email || '-'}</div>`
+            content += `<div class="info-item"><span class="detail-label">电话：</span>${student.phone || '-'}</div>`
+            content += `</div></div>`
+          })
+        } else {
+          content += '<div class="no-data">暂无分配的学生信息</div>'
+        }
+      } else {
+          // 无数据状态
+          content += '<div class="empty-state">'
+          content += '<div class="empty-icon">📋</div>'
+          content += '<div class="empty-text">大学尚未分配学生或暂无相关信息</div>'
+          content += '</div>'
+        }
+        
+        // 闭合右侧面板
+        content += '</div>'
+        
+        // 闭合左右布局容器
+        content += '</div>'
+        
+        content += '</div>'
+        return content
+    }
+
+    // 显示弹窗 - 与已通过岗位信息弹窗使用相同的配置
+    Modal.info({
+      title: '需求详情与大学分配学生信息',
+      content: h('div', { innerHTML: generatePopupContent(assignments && assignments.length > 0) }),
+      centered: true,
+      width: '80%', // 增加宽度以更好地显示学生信息
+      maxWidth: '600px', // 最大宽度限制
+      okText: '确定',
+      okButtonProps: { class: 'custom-ok-btn' },
+      onOk() { console.log('确认查看需求详情') }
+    })
+
+  } catch (error) {
+    console.error('查询需求详情失败:', error)
+    message.error(`查询失败: ${error.message || '未知错误'}`)
+  }
 }
 
 const refreshDemands = () => {
@@ -833,8 +963,9 @@ onMounted(() => {
 /* 全局样式 - 用于弹窗渲染 */
 .popup-container {
   padding: 14px;
+  width: 100%;
   min-width: 300px;
-  max-width: 380px;
+  max-width: 100%;
   min-height: 300px;
   max-height: 600px;
   overflow-y: auto;
@@ -843,6 +974,26 @@ onMounted(() => {
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border: 1px solid #e8e8e8;
+  box-sizing: border-box; /* 确保padding不会增加元素宽度 */
+}
+
+/* 左右布局容器 */
+.details-container {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+}
+
+/* 左侧面板 - 需求基本信息 */
+.left-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右侧面板 - 学生分配信息 */
+.right-panel {
+  flex: 1;
+  min-width: 0;
 }
 
 .position-base-info {
@@ -851,34 +1002,100 @@ onMounted(() => {
 
 .grid-layout {
   display: grid;
-  grid-template-columns: 80px 15px 1fr;
-  gap: 2px;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
 .info-label {
   text-align: right;
   color: #666;
-  padding: 2px 0;
+  padding: 6px 0;
   font-size: 14px;
   font-weight: 500;
-  min-width: 80px;
+  min-width: 100px;
 }
 
 .info-value {
   color: #333;
-  padding: 2px 0;
+  padding: 6px 0;
   font-weight: 500;
   font-size: 14px;
+  line-height: 1.6;
 }
 
-.info-divider {
-  color: #e8e8e8;
+/* 新的岗位信息项样式，与学生信息保持一致 */
+.info-item {
+  margin: 4px 0;
+  padding: 6px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 大学分配信息区域样式 */
+.assignment-section {
+  margin-top: 16px;
+}
+
+.assignment-summary {
+  background: #f0f9ff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #1890ff;
+  font-weight: 500;
+}
+
+.subsection-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 12px 0 8px 0;
+  padding-left: 8px;
+  border-left: 2px solid #1890ff;
+}
+
+.no-data {
+  text-align: center;
+  color: #999;
+  padding: 16px;
+  font-style: italic;
+}
+
+/* 分配状态样式 */
+.assignment-status {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.status-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  padding: 2px 0;
+  margin: 8px 0;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.assignment-index {
+  font-weight: 500;
+  color: #666;
+  margin-right: 8px;
+  min-width: 60px;
+}
+
+.status-tag {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.review-time {
+  color: #999;
+  font-size: 12px;
+  margin-left: auto;
 }
 
 .divider {
@@ -899,14 +1116,6 @@ onMounted(() => {
 
 .student-list {
   margin-top: 15px;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 10px;
-  padding-left: 5px;
 }
 
 .student-card {
@@ -931,8 +1140,8 @@ onMounted(() => {
 }
 
 .student-details {
-  font-size: 12px;
-  line-height: 1.8;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .detail-label {
@@ -975,6 +1184,19 @@ onMounted(() => {
   }
   .grid-layout {
     grid-template-columns: 100px 1fr;
+  }
+  /* 小屏幕下左右布局切换为垂直布局 */
+  .details-container {
+    flex-direction: column;
+    gap: 15px;
+  }
+  /* 确保面板在垂直布局时有适当的间距 */
+  .left-panel,
+  .right-panel {
+    width: 100%;
+  }
+  .section-title {
+    margin-bottom: 12px;
   }
 }
 </style>
@@ -1138,7 +1360,7 @@ onMounted(() => {
 }
 
 .student-details div {
-  margin: 2px 0;
+  margin: 4px 0;
 }
 
 .rejection-reason {

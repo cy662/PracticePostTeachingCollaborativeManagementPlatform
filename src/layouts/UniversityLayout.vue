@@ -28,12 +28,6 @@
           </template>
           <span>岗位管理</span>
         </a-menu-item>
-        <a-menu-item key="monitoring" @click="navigateTo('monitoring')">
-          <template #icon>
-            <MonitorOutlined />
-          </template>
-          <span>监控中心</span>
-        </a-menu-item>
       </a-menu>
     </a-layout-sider>
     
@@ -79,8 +73,7 @@ import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { 
   TeamOutlined, 
-  AppstoreOutlined, 
-  MonitorOutlined,
+  AppstoreOutlined,
   UserOutlined, 
   DownOutlined,
   MenuUnfoldOutlined,

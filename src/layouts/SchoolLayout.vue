@@ -28,12 +28,6 @@
           </template>
           <span>教师管理</span>
         </a-menu-item>
-        <a-menu-item key="evaluation" @click="navigateTo('evaluation')">
-          <template #icon>
-            <FileTextOutlined />
-          </template>
-          <span>评价中心</span>
-        </a-menu-item>
       </a-menu>
     </a-layout-sider>
     
@@ -80,7 +74,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { 
   FormOutlined, 
   TeamOutlined, 
-  FileTextOutlined,
   UserOutlined, 
   DownOutlined,
   MenuUnfoldOutlined,

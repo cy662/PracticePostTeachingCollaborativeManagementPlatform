@@ -183,8 +183,10 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="学号" required>
-              <a-input v-model:value="addForm.studentId" placeholder="请输入学号" />
+            <a-form-item label="学号" required
+              :validate-status="getStudentIdStatus(addForm.studentId)"
+              :help="getStudentIdHelp(addForm.studentId)">
+              <a-input v-model:value="addForm.studentId" placeholder="请输入8-12位字母和数字组合" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -207,13 +209,17 @@
         
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="联系电话">
-              <a-input v-model:value="addForm.phone" placeholder="请输入联系电话" />
+            <a-form-item label="联系电话"
+              :validate-status="getPhoneStatus(addForm.phone)"
+              :help="getPhoneHelp(addForm.phone)">
+              <a-input v-model:value="addForm.phone" placeholder="请输入11位中国大陆手机号码" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="邮箱">
-              <a-input v-model:value="addForm.email" placeholder="请输入邮箱" />
+            <a-form-item label="邮箱"
+              :validate-status="getEmailStatus(addForm.email)"
+              :help="getEmailHelp(addForm.email)">
+              <a-input v-model:value="addForm.email" placeholder="请输入有效的邮箱地址" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -296,13 +302,17 @@
         
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="联系电话">
-              <a-input v-model:value="editForm.phone" placeholder="请输入联系电话" />
+            <a-form-item label="联系电话"
+              :validate-status="getPhoneStatus(editForm.phone)"
+              :help="getPhoneHelp(editForm.phone)">
+              <a-input v-model:value="editForm.phone" placeholder="请输入11位中国大陆手机号码" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="邮箱">
-              <a-input v-model:value="editForm.email" placeholder="请输入邮箱" />
+            <a-form-item label="邮箱"
+              :validate-status="getEmailStatus(editForm.email)"
+              :help="getEmailHelp(editForm.email)">
+              <a-input v-model:value="editForm.email" placeholder="请输入有效的邮箱地址" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -740,6 +750,45 @@ const formatDateTimeToCST = (dateString) => {
   }
 }
 
+// 学号验证状态函数
+const getStudentIdStatus = (studentId) => {
+  if (!studentId) return ''
+  if (/^[A-Za-z0-9]{8,12}$/.test(studentId)) return 'success'
+  return 'error'
+}
+
+const getStudentIdHelp = (studentId) => {
+  if (!studentId) return '请输入8-12位字母和数字组合'
+  if (/^[A-Za-z0-9]{8,12}$/.test(studentId)) return ''
+  return '学号格式不正确，应为8-12位字母和数字组合'
+}
+
+// 电话号码验证状态函数
+const getPhoneStatus = (phone) => {
+  if (!phone) return ''
+  if (/^1[3-9]\d{9}$/.test(phone)) return 'success'
+  return 'error'
+}
+
+const getPhoneHelp = (phone) => {
+  if (!phone) return '请输入11位中国大陆手机号码'
+  if (/^1[3-9]\d{9}$/.test(phone)) return ''
+  return '电话号码格式不正确，应为11位中国大陆手机号码'
+}
+
+// 邮箱验证状态函数
+const getEmailStatus = (email) => {
+  if (!email) return ''
+  if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) return 'success'
+  return 'error'
+}
+
+const getEmailHelp = (email) => {
+  if (!email) return '请输入有效的邮箱地址'
+  if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) return ''
+  return '邮箱格式不正确，请输入有效的邮箱地址'
+}
+
 // 处理学生添加提交
 const handleAdd = async () => {
   addLoading.value = true
@@ -756,9 +805,21 @@ const handleAdd = async () => {
       return
     }
 
-    // 验证学号格式
-    if (!/^[A-Za-z0-9]{1,20}$/.test(addForm.studentId)) {
-      message.error('学号格式不正确，请使用字母和数字，长度不超过20位')
+    // 验证学号格式 - 更严格的验证
+    if (!/^[A-Za-z0-9]{8,12}$/.test(addForm.studentId)) {
+      message.error('学号格式不正确，请使用8-12位字母和数字组合')
+      return
+    }
+
+    // 验证电话号码格式
+    if (addForm.phone && !/^1[3-9]\d{9}$/.test(addForm.phone)) {
+      message.error('电话号码格式不正确，请输入11位中国大陆手机号码')
+      return
+    }
+
+    // 验证邮箱格式
+    if (addForm.email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(addForm.email)) {
+      message.error('邮箱格式不正确，请输入有效的邮箱地址')
       return
     }
 
@@ -929,6 +990,18 @@ const handleEditSubmit = async () => {
     }
     if (!editForm.major.trim()) {
       message.error('请输入专业')
+      return
+    }
+
+    // 验证电话号码格式
+    if (editForm.phone && !/^1[3-9]\d{9}$/.test(editForm.phone)) {
+      message.error('电话号码格式不正确，请输入11位中国大陆手机号码')
+      return
+    }
+
+    // 验证邮箱格式
+    if (editForm.email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(editForm.email)) {
+      message.error('邮箱格式不正确，请输入有效的邮箱地址')
       return
     }
 
@@ -1165,8 +1238,18 @@ const validateImportData = (data) => {
     }
 
     // 学号格式验证
-    if (row.学号 && !/^\d{8,12}$/.test(row.学号)) {
-      errors.push('学号格式不正确，应为8-12位数字')
+    if (row.学号 && !/^[A-Za-z0-9]{8,12}$/.test(row.学号)) {
+      errors.push('学号格式不正确，应为8-12位字母和数字组合')
+    }
+
+    // 电话号码格式验证
+    if (row.联系电话 && !/^1[3-9]\d{9}$/.test(row.联系电话)) {
+      errors.push('电话号码格式不正确，应为11位中国大陆手机号码')
+    }
+
+    // 邮箱格式验证
+    if (row.邮箱 && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(row.邮箱)) {
+      errors.push('邮箱格式不正确，请输入有效的邮箱地址')
     }
 
     // 性别验证
