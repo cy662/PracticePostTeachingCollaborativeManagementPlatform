@@ -2,7 +2,7 @@
   <div class="login-container">
     <div class="login-form">
       <div class="login-header">
-        <h1>顶岗支教UGE协同管理平台</h1>
+        <h1>顶岗支教UGS协同管理平台</h1>
       </div>
       
       <a-form
